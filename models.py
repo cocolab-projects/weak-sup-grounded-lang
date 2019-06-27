@@ -28,7 +28,7 @@ class Supervised(nn.Module):
     @param embedding_module: nn.Embedding
                              pass the embedding module (share with
                              decoder)
-    @param z_dim: integer
+    @param d_dim: integer
                   number of latent dimensions
     @param hidden_dim: integer [default: 256]
                        number of hidden nodes in GRU
@@ -40,12 +40,13 @@ class Supervised(nn.Module):
         self.embedding_dim = embedding_module.embedding.embedding_dim
         self.hidden_dim = hidden_dim
         self.gru = nn.GRU(self.embedding_dim, self.hidden_dim, batch_first=True)
-        self.linear = nn.Linear(self.hidden_dim, self.rgb_dim)
-
+        self.sequential = nn.Sequential([nn.Linear(hidden_dim, hidden_dim // 4), \
+                                            nn.ReLU(),  \
+                                            nn.Linear(hidden_dim // 4, 3)] )
+    
     def forward(self, seq, length):
         batch_size = seq.size(0)
 
-        # ??? WHY SORT IN DESCENDING ORDER OF LENGTH ???
         if batch_size > 1:
             sorted_lengths, sorted_idx = torch.sort(length, descending=True)
             seq = seq[sorted_idx]
@@ -53,17 +54,20 @@ class Supervised(nn.Module):
         # embed your sequences
         embed_seq = self.embedding(seq)
 
+        # pack padded sequences
         packed = rnn_utils.pack_padded_sequence(
             embed_seq,
-            sorted_lengths.data.tolist() if batch_size > 1 else length.data.tolist())
+            sorted_lengths.data.tolist() if batch_size > 1 else length.data.tolist(), batch_first=True)
 
+        # run RNN
         _, hidden = self.gru(packed)
-        hidden = hidden[-1, ...]    # ??? WHAT IS THIS CODE DOING ???
 
-        # ??? WHY SORT BACK TO ORIGINAL ORDER ???
+        # remove layer number
+        hidden = hidden[-1, ...]
+
         if batch_size > 1:
             _, reversed_idx = torch.sort(sorted_idx)
             hidden = hidden[reversed_idx]
 
-        return self.linear(hidden)
+        return self.sequential(hidden)
 

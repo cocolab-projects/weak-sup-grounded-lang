@@ -12,7 +12,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
-import ColorDataset
+import color_dataset
 
 from utils import (AverageMeter)
 from models import TextEmbedding, Supervised
@@ -81,8 +81,6 @@ if __name__ == '__main__':
         for batch_idx, (y_rgb, x_inp, x_len) in enumerate(train_loader):
             # ?? what is size(0) doing? size of |x_input|'s 0th dimension ???
             batch_size = x_inp.size(0) 
-            # ??? reshaping? probably don't need ???
-            # x_inp = x_inp.view(batch_size, n_channels, 32, 32)
             y_rgb = y_rgb.to(device)
             x_inp = x_inp.to(device)
             x_len = x_len.to(device)
