@@ -56,9 +56,9 @@ class ColorDataset(data.Dataset):
             self.rounds = self.roundsList[int(length * TRAINING_PERCENTAGE):-int(length * TESTING_PERCENTAGE)]
             self.images = self.imagesList[int(length * TRAINING_PERCENTAGE):-int(length * TESTING_PERCENTAGE)]
         elif split == 'Test':
-            self.texts = self.textsList[-int(length * TESTING_PERCENTAGE)]
-            self.rounds = self.roundsList[-int(length * TESTING_PERCENTAGE)]
-            self.images = self.imagesList[-int(length * TESTING_PERCENTAGE)]
+            self.texts = self.textsList[-int(length * TESTING_PERCENTAGE):]
+            self.rounds = self.roundsList[-int(length * TESTING_PERCENTAGE):]
+            self.images = self.imagesList[-int(length * TESTING_PERCENTAGE):]
         if vocab is None:
             self.vocab = self.build_vocab(self.texts)
         else:
