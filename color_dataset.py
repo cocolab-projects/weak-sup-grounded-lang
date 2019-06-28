@@ -63,6 +63,7 @@ class ColorDataset(data.Dataset):
             self.vocab = self.build_vocab(self.texts)
         else:
             self.vocab = vocab
+        self.vocab_size = len(self.vocab['w2i'])
         self.target_RGBs, self.texts = self.concatenate_by_round(self.texts, self.images, self.rounds)
         self.inputs, self.lengths, self.max_len = self.process_texts(self.texts)
 

@@ -21,7 +21,6 @@ from models import TextEmbedding, Supervised
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    # parser.add_argument('dataset', type=str, help='colors (for now)')
     parser.add_argument('out_dir', type=str, help='where to save checkpoints')
     parser.add_argument('--d-dim', type=int, default=100,
                         help='number of hidden dimensions [default: 100]')
@@ -51,7 +50,7 @@ if __name__ == '__main__':
     train_dataset = ColorDataset(split='Train')
     train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
     N_mini_batches = len(train_loader)
-    vocab_size = len(train_dataset.vocab['w2i'])
+    vocab_size = train_dataset.vocab_size
     vocab = train_dataset.vocab
 
     test_dataset = ColorDataset(vocab=vocab, split='Validation')
@@ -118,9 +117,10 @@ if __name__ == '__main__':
                 x_len = x_len.to(device)
 
                 pred_rgb = sup_img(x_inp, x_len)
+                pred_rgb = torch.sigmoid(pred_rgb)
 
                 loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
-                
+
                 loss_meter.update(loss.item(), batch_size)
                 
                 pbar.update()
@@ -142,15 +142,14 @@ if __name__ == '__main__':
         track_loss[epoch - 1, 0] = train_loss
         track_loss[epoch - 1, 1] = test_loss
         
-        if epoch % 20 == 0:
-            save_checkpoint({
-                'epoch': epoch,
-                'sup_emb': sup_emb.state_dict(),
-                'sup_img': sup_img.state_dict(),
-                'track_loss': track_loss,
-                'optimizer': optimizer.state_dict(),
-                'cmd_line_args': args,
-                'vocab': vocab,
-                'vocab_size': vocab_size,
-            }, is_best, folder=args.out_dir)
+        save_checkpoint({
+            'epoch': epoch,
+            'sup_emb': sup_emb.state_dict(),
+            'sup_img': sup_img.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'track_loss': track_loss,
+            'cmd_line_args': args,
+            'vocab': vocab,
+            'vocab_size': vocab_size,
+        }, is_best, folder=args.out_dir)
         np.save(os.path.join(args.out_dir, 'loss.npy'), track_loss)
