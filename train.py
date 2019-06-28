@@ -12,18 +12,17 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
-import color_dataset
+from color_dataset import ColorDataset
 
-from utils import (AverageMeter)
+from utils import (AverageMeter, save_checkpoint)
 from models import TextEmbedding, Supervised
 
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('dataset', type=str, help='colors (for now)')
+    # parser.add_argument('dataset', type=str, help='colors (for now)')
     parser.add_argument('out_dir', type=str, help='where to save checkpoints')
-    # unnecessary
     parser.add_argument('--d-dim', type=int, default=100,
                         help='number of hidden dimensions [default: 100]')
     parser.add_argument('--batch_size', type=int, default=100,
@@ -48,14 +47,14 @@ if __name__ == '__main__':
 
     device = torch.device('cuda' if args.cuda else 'cpu')
 
-    data_dir = get_data_dir(args.dataset)
-    train_dataset = ColorDataset(train=True)
+    # data_dir = get_data_dir(args.dataset)
+    train_dataset = ColorDataset(split='Train')
     train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
     N_mini_batches = len(train_loader)
     vocab_size = len(train_dataset.vocab['w2i'])
     vocab = train_dataset.vocab
 
-    test_dataset = ColorDataset(train=True)
+    test_dataset = ColorDataset(vocab=vocab, split='Validation')
     test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
     sup_emb = TextEmbedding(vocab_size)
@@ -75,32 +74,28 @@ if __name__ == '__main__':
         sup_emb.train()
         sup_img.train()
 
-        # !!! WRITE AverageMeter !!!
-        # loss_meter = AverageMeter()
-
+        loss_meter = AverageMeter()
+        pbar = tqdm(total=len(train_loader))
         for batch_idx, (y_rgb, x_inp, x_len) in enumerate(train_loader):
-            # ?? what is size(0) doing? size of |x_input|'s 0th dimension ???
             batch_size = x_inp.size(0) 
-            y_rgb = y_rgb.to(device)
+            y_rgb = y_rgb.to(device).float()
             x_inp = x_inp.to(device)
             x_len = x_len.to(device)
 
             # obtain predicted rgb
-            pred_rgb = sup_img(x_input, x_len)
+            pred_rgb = sup_img(x_inp, x_len)
 
             # loss between actual and predicted rgb
-            # !!! MIGHT HAVE TO WRIE LOSS FUNCTION separately -- binary cross entropy? !!!
-            loss = torch.mean(pred_rgb - y_rgb)
+            loss = nn.BCELoss()(torch.sigmoid(pred_rgb), y_rgb)
 
-            # loss_meter.update(loss.item(), batch_size)
+            loss_meter.update(loss.item(), batch_size)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if batch_idx % args.log_interval == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\t Loss: {:.6f}'.format(
-                    epoch, batch_idx * len(x), len(train_loader.dataset),
-                    100. * batch_idx / len(train_loader), loss_meter.avg))
+            pbar.set_postfix({'loss': loss_meter.avg})
+            pbar.update()
+        pbar.close()
             
         print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
         
@@ -114,23 +109,26 @@ if __name__ == '__main__':
         with torch.no_grad():
             loss_meter = AverageMeter()
 
+            pbar = tqdm(total=len(test_loader))
             for batch_idx, (y_rgb, x_inp, x_len) in enumerate(test_loader):
                 batch_size = x_inp.size(0)
-                y_rgb = y_rgb.to(device)
+                y_rgb = y_rgb.to(device).float()
                 x_inp = x_inp.to(device)
                 x_len = x_len.to(device)
 
-                pred_rgb = sup_img(x)
+                pred_rgb = sup_img(x_inp, x_len)
 
-                loss = torch.mean(pred_rgb - y_rgb)
+                loss = nn.BCELoss()(torch.sigmoid(pred_rgb), y_rgb)
                 loss_meter.update(loss.item(), batch_size)
-
+                
+                pbar.update()
+            pbar.close()
             print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
                     
         return loss_meter.avg
 
-
-    best_loss = sys.maxint
+    print("begin training...")
+    best_loss = float('inf')
     track_loss = np.zeros((args.epochs, 2))
     for epoch in range(1, args.epochs + 1):
         train_loss = train(epoch)
@@ -141,11 +139,14 @@ if __name__ == '__main__':
         track_loss[epoch - 1, 0] = train_loss
         track_loss[epoch - 1, 1] = test_loss
         
-        # ??? WRITE SEPARATE |save_checkpoint| function ???
-        # save_checkpoint({
-        #     'sup_emb': sup_emb.state_dict(),
-        #     'sup_img': sup_img.state_dict(),
-        #     'cmd_line_args': args,
-        #     'vocab': vocab,
-        # }, is_best, folder=args.out_dir)
+        save_checkpoint({
+            'epoch': epoch,
+            'sup_emb': sup_emb.state_dict(),
+            'sup_img': sup_img.state_dict(),
+            'track_loss': track_loss,
+            'optimizer': optimizer.state_dict(),
+            'cmd_line_args': args,
+            'vocab': vocab,
+            'vocab_size': vocab_size,
+        }, is_best, folder=args.out_dir)
         np.save(os.path.join(args.out_dir, 'loss.npy'), track_loss)

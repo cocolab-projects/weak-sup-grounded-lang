@@ -14,7 +14,7 @@ class TextEmbedding(nn.Module):
     """ Embeds a |vocab_size| number
 
     """
-    def __init__(self, vocab_size, hidden_dim=256):
+    def __init__(self, vocab_size, hidden_dim=64):
         super(TextEmbedding, self).__init__()
         self.embedding = nn.Embedding(vocab_size, hidden_dim)
     
@@ -40,9 +40,9 @@ class Supervised(nn.Module):
         self.embedding_dim = embedding_module.embedding.embedding_dim
         self.hidden_dim = hidden_dim
         self.gru = nn.GRU(self.embedding_dim, self.hidden_dim, batch_first=True)
-        self.sequential = nn.Sequential([nn.Linear(hidden_dim, hidden_dim // 4), \
-                                            nn.ReLU(),  \
-                                            nn.Linear(hidden_dim // 4, 3)] )
+        self.sequential = nn.Sequential(nn.Linear(hidden_dim, hidden_dim // 4), \
+                                        nn.ReLU(),  \
+                                        nn.Linear(hidden_dim // 4, 3) )
     
     def forward(self, seq, length):
         batch_size = seq.size(0)
