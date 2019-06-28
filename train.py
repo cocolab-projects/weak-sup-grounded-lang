@@ -62,7 +62,6 @@ if __name__ == '__main__':
     
     sup_emb = sup_emb.to(device)
     sup_img = sup_img.to(device)
-
     optimizer = torch.optim.Adam(
         chain(
             sup_emb.parameters(), 
@@ -84,9 +83,10 @@ if __name__ == '__main__':
 
             # obtain predicted rgb
             pred_rgb = sup_img(x_inp, x_len)
-
-            # loss between actual and predicted rgb
-            loss = nn.BCELoss()(torch.sigmoid(pred_rgb), y_rgb)
+            pred_rgb = torch.sigmoid(pred_rgb)
+ 
+            # loss between actual and predicted rgb: Mean Squared Loss !!
+            loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
 
             loss_meter.update(loss.item(), batch_size)
             optimizer.zero_grad()
@@ -97,7 +97,8 @@ if __name__ == '__main__':
             pbar.update()
         pbar.close()
             
-        print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
+        if epoch % 10 == 0:
+            print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
         
         return loss_meter.avg
 
@@ -118,12 +119,14 @@ if __name__ == '__main__':
 
                 pred_rgb = sup_img(x_inp, x_len)
 
-                loss = nn.BCELoss()(torch.sigmoid(pred_rgb), y_rgb)
+                loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
+                
                 loss_meter.update(loss.item(), batch_size)
                 
                 pbar.update()
             pbar.close()
-            print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
+            if epoch % 10 == 0:
+                print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
                     
         return loss_meter.avg
 
@@ -139,14 +142,15 @@ if __name__ == '__main__':
         track_loss[epoch - 1, 0] = train_loss
         track_loss[epoch - 1, 1] = test_loss
         
-        save_checkpoint({
-            'epoch': epoch,
-            'sup_emb': sup_emb.state_dict(),
-            'sup_img': sup_img.state_dict(),
-            'track_loss': track_loss,
-            'optimizer': optimizer.state_dict(),
-            'cmd_line_args': args,
-            'vocab': vocab,
-            'vocab_size': vocab_size,
-        }, is_best, folder=args.out_dir)
+        if epoch % 20 == 0:
+            save_checkpoint({
+                'epoch': epoch,
+                'sup_emb': sup_emb.state_dict(),
+                'sup_img': sup_img.state_dict(),
+                'track_loss': track_loss,
+                'optimizer': optimizer.state_dict(),
+                'cmd_line_args': args,
+                'vocab': vocab,
+                'vocab_size': vocab_size,
+            }, is_best, folder=args.out_dir)
         np.save(os.path.join(args.out_dir, 'loss.npy'), track_loss)

@@ -8,15 +8,17 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 import colorsys
-# from src.utils.utils import OrderedCounter
+
 import nltk
 from nltk import sent_tokenize, word_tokenize
+
 import numpy as np
 import torch
 import torch.utils.data as data
 from torchvision import transforms
 from nltk.tokenize import TweetTokenizer
 from nltk.tokenize import RegexpTokenizer
+
 from collections import defaultdict
 
 FILE_DIR = os.path.realpath(os.path.dirname(__file__))
@@ -80,7 +82,7 @@ class ColorDataset(data.Dataset):
                 input_tokens.extend([PAD_TOKEN] * (MAX_LEN - length))
             input_indices = [self.vocab['w2i'].get(token, self.vocab['w2i'][UNK_TOKEN]) for token in input_tokens]
             assert(len(input_indices) == MAX_LEN), breakpoint()
-            inputs.append(input_indices)
+            inputs.append(np.array(input_indices))
             lengths.append(length)
         
         inputs = np.array(inputs)
@@ -234,4 +236,4 @@ class ColorDataset(data.Dataset):
         return len(self.inputs)
 
     def __getitem__(self, index):
-        return self.target_RGBs[index], np.array(self.inputs[index]), self.lengths[index]
+        return self.target_RGBs[index], self.inputs[index], self.lengths[index]
