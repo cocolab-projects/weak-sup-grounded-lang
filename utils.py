@@ -32,3 +32,9 @@ def save_checkpoint(state, is_best, folder='./', filename='checkpoint.pth.tar'):
     if is_best:
         shutil.copyfile(os.path.join(folder, filename),
                         os.path.join(folder, 'model_best.pth.tar'))
+
+def get_text(i2w, input, length):
+  text = ""
+  for j in range(1,length - 1):
+    text += " " + i2w[input[j]]
+  return text
