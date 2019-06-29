@@ -12,7 +12,6 @@ import torch.nn.utils.rnn as rnn_utils
 
 class TextEmbedding(nn.Module):
     """ Embeds a |vocab_size| number
-
     """
     def __init__(self, vocab_size, hidden_dim=64):
         super(TextEmbedding, self).__init__()
