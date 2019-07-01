@@ -18,65 +18,65 @@ from color_dataset import (ColorDataset, WeakSup_ColorDataset)
 from utils import (AverageMeter, save_checkpoint)
 from models import Supervised
 
-def train(epoch):
-    sup_img.train()
+if __name__ == '__main__':
+    def train(epoch):
+        sup_img.train()
 
-    loss_meter = AverageMeter()
-    pbar = tqdm(total=len(train_loader))
-    for batch_idx, (y_rgb, x_inp, x_len) in enumerate(train_loader):
-        batch_size = x_inp.size(0) 
-        y_rgb = y_rgb.to(device).float()
-        x_inp = x_inp.to(device)
-        x_len = x_len.to(device)
-
-        # obtain predicted rgb
-        pred_rgb = sup_img(x_inp, x_len)
-        pred_rgb = torch.sigmoid(pred_rgb)
-
-        # loss between actual and predicted rgb: Mean Squared Error
-        loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
-
-        loss_meter.update(loss.item(), batch_size)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        pbar.set_postfix({'loss': loss_meter.avg})
-        pbar.update()
-    pbar.close()
-        
-    if epoch % 10 == 0:
-        print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
-    
-    return loss_meter.avg
-
-
-def test(epoch):
-    sup_img.eval()
-
-    with torch.no_grad():
         loss_meter = AverageMeter()
-        pbar = tqdm(total=len(test_loader))
-
-        for batch_idx, (y_rgb, x_inp, x_len) in enumerate(test_loader):
-            batch_size = x_inp.size(0)
+        pbar = tqdm(total=len(train_loader))
+        for batch_idx, (y_rgb, x_inp, x_len) in enumerate(train_loader):
+            batch_size = x_inp.size(0) 
             y_rgb = y_rgb.to(device).float()
             x_inp = x_inp.to(device)
             x_len = x_len.to(device)
 
+            # obtain predicted rgb
             pred_rgb = sup_img(x_inp, x_len)
             pred_rgb = torch.sigmoid(pred_rgb)
 
+            # loss between actual and predicted rgb: Mean Squared Error
             loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
-            loss_meter.update(loss.item(), batch_size)  
 
+            loss_meter.update(loss.item(), batch_size)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            pbar.set_postfix({'loss': loss_meter.avg})
             pbar.update()
         pbar.close()
+            
         if epoch % 10 == 0:
-            print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
-    return loss_meter.avg
+            print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
+        
+        return loss_meter.avg
 
-if __name__ == '__main__':
+
+    def test(epoch):
+        sup_img.eval()
+
+        with torch.no_grad():
+            loss_meter = AverageMeter()
+            pbar = tqdm(total=len(test_loader))
+
+            for batch_idx, (y_rgb, x_inp, x_len) in enumerate(test_loader):
+                batch_size = x_inp.size(0)
+                y_rgb = y_rgb.to(device).float()
+                x_inp = x_inp.to(device)
+                x_len = x_len.to(device)
+
+                pred_rgb = sup_img(x_inp, x_len)
+                pred_rgb = torch.sigmoid(pred_rgb)
+
+                loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
+                loss_meter.update(loss.item(), batch_size)  
+
+                pbar.update()
+            pbar.close()
+            if epoch % 10 == 0:
+                print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
+        return loss_meter.avg
+
     # Parse arguments
     import argparse
     parser = argparse.ArgumentParser()
