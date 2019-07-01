@@ -1,5 +1,5 @@
 cd scripts
-conda activate pytorch4;
+
 
 OUT_DIR=$1;
 LOAD_DIR=$3;
