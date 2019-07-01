@@ -24,7 +24,7 @@ from nltk.tokenize import RegexpTokenizer
 from collections import defaultdict
 
 FILE_DIR = os.path.realpath(os.path.dirname(__file__))
-RAW_DIR = os.path.join(FILE_DIR, '../')
+RAW_DIR = os.path.join(FILE_DIR, './')
 
 SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
