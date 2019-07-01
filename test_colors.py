@@ -1,4 +1,4 @@
-from models import (TextEmbedding, Supervised)
+from models import (Supervised)
 from utils import (AverageMeter, save_checkpoint, get_text)
 from color_dataset import (ColorDataset, Colors_ReferenceGame)
 import os
@@ -15,25 +15,26 @@ import shutil
 from tqdm import tqdm
 from itertools import chain
 
-def load_checkpoint(folder='./', filename='model_best.pth.tar'):
-    checkpoint = torch.load(folder + filename)
-    epoch = checkpoint['epoch']
-    track_loss = checkpoint['track_loss']
-    sup_emb = checkpoint['sup_emb']
-    sup_img = checkpoint['sup_img']
-    vocab = checkpoint['vocab']
-    vocab_size = checkpoint['vocab_size']
-    return epoch, track_loss, sup_emb, sup_img, vocab, vocab_size
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('load_dir', type=str, help='where to load checkpoints from')
+    parser.add_argument('--sup_lvl', type=float, help='supervision level, if any')
+    parser.add_argument('--num_iter', type=int, default=1, help='number of total iterations performed on each setting [default: 1]')
+    parser.add_argument('--seed', type=int, default=42)
+    args = parser.parse_args()
+torch.manual_seed(args.seed)
+np.random.seed(args.seed)
 
 def test_loss(model, vocab, split='Test'):
     '''
     Test model on newly seen dataset -- gives final test loss
     '''
     assert (vocab != None)
-    print("Computing final test loss for newly seen datasets...")
+    print("Computing final test loss on newly seen dataset...")
 
     test_dataset = ColorDataset(vocab=vocab, split=split)
-    test_loader = DataLoader(test_dataset, shuffle=True, batch_size=100)
+    test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
     N_mini_batches = len(test_loader)
 
     model.eval()
@@ -50,13 +51,14 @@ def test_loss(model, vocab, split='Test'):
 
             loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
             
-            given_text = get_text(vocab['i2w'], np.array(x_inp[0]), x_len[0].item())
-            pred_RGB = (pred_rgb[0] * 255.0).long().tolist()
-            print('{0} matches with text: {1}'.format(pred_RGB, given_text))
+            # if batch_idx % 20 == 0:
+            #     given_text = get_text(vocab['i2w'], np.array(x_inp[0]), x_len[0].item())
+            #     pred_RGB = (pred_rgb[0] * 255.0).long().tolist()
+            #     print('{0} matches with text: {1}'.format(pred_RGB, given_text))
 
             loss_meter.update(loss.item(), batch_size)
         print('====> Final Test Loss: {:.4f}'.format(loss_meter.avg))
-        print()
+    return loss_meter.avg
 
 def test_refgame_accuracy(model, vocab):
     '''
@@ -102,24 +104,37 @@ def test_refgame_accuracy(model, vocab):
         print('====> Final Test Loss: {:.4f}'.format(loss_meter.avg))
         print('====> Final Accuracy: {}/{} = {}%'.format(correct_count, total_count, accuracy))
         print()
+    return accuracy
 
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('load_dir', type=str, help='where to load checkpoints from')
-    parser.add_argument('--seed', type=int, default=42)
-    args = parser.parse_args()
-torch.manual_seed(args.seed)
-np.random.seed(args.seed)
+def load_checkpoint(folder='./', filename='model_best.pth.tar'):
+    checkpoint = torch.load(folder + filename)
+    epoch = checkpoint['epoch']
+    track_loss = checkpoint['track_loss']
+    sup_img = checkpoint['sup_img']
+    vocab = checkpoint['vocab']
+    vocab_size = checkpoint['vocab_size']
+    return epoch, track_loss, sup_img, vocab, vocab_size
 
-epoch, track_loss, sup_emb, sup_img, vocab, vocab_size = load_checkpoint(folder=args.load_dir,filename='model_best.pth.tar')
 
-emb = TextEmbedding(vocab_size)
-emb.load_state_dict(sup_emb)
-txt2img = Supervised(emb)
-txt2img.load_state_dict(sup_img)
+losses, accuracies = [], []
+for i in range(1, args.num_iter + 1):
+    epoch, track_loss, sup_img, vocab, vocab_size = \
+        load_checkpoint(folder=args.load_dir,
+                        filename='checkpoint_{}_{}_best.pth.tar'.format(args.sup_lvl, i))
+    
+    print("iteration {}".format(i))
+    print("best training epoch: {}".format(epoch))
 
-print("best training epoch: {}".format(epoch))
+    txt2img = Supervised(vocab_size)
+    txt2img.load_state_dict(sup_img)
+
+    losses.append(test_loss(txt2img, vocab))
+    accuracies.append(test_refgame_accuracy(txt2img, vocab))
+
+losses = np.array(losses)
+accuracies = np.array(accuracies)
+
 print()
-test_loss(txt2img, vocab)
-test_refgame_accuracy(txt2img, vocab)
+print("======> Average loss: {}".format(np.mean(losses)))
+print("======> Average accuracy: {}".format(np.mean(accuracies)))
+
