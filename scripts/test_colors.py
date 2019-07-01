@@ -39,7 +39,6 @@ def test_loss(model, vocab, split='Test'):
     N_mini_batches = len(test_loader)
 
     model.eval()
-
     with torch.no_grad():
         loss_meter = AverageMeter()
 
