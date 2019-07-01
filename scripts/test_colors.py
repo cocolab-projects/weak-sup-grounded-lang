@@ -100,8 +100,8 @@ if __name__ == '__main__':
 
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('LOAD_DIR', type=str, help='where to load checkpoints from')
-    parser.add_argument('OUT_DIR', type=str, help='where to store results from')
+    parser.add_argument('load_dir', type=str, help='where to load checkpoints from')
+    parser.add_argument('out_dir', type=str, help='where to store results from')
     parser.add_argument('--sup_lvl', type=float, help='supervision level, if any')
     parser.add_argument('--num_iter', type=int, default=1, help='number of total iterations performed on each setting [default: 1]')
     parser.add_argument('--seed', type=int, default=42)
