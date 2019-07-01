@@ -19,6 +19,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('load_dir', type=str, help='where to load checkpoints from')
+    parser.add_argument('out_dir', type=str, help='where to store results from')
     parser.add_argument('--sup_lvl', type=float, help='supervision level, if any')
     parser.add_argument('--num_iter', type=int, default=1, help='number of total iterations performed on each setting [default: 1]')
     parser.add_argument('--seed', type=int, default=42)
@@ -50,12 +51,6 @@ def test_loss(model, vocab, split='Test'):
             pred_rgb = torch.sigmoid(pred_rgb)
 
             loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
-            
-            # if batch_idx % 20 == 0:
-            #     given_text = get_text(vocab['i2w'], np.array(x_inp[0]), x_len[0].item())
-            #     pred_RGB = (pred_rgb[0] * 255.0).long().tolist()
-            #     print('{0} matches with text: {1}'.format(pred_RGB, given_text))
-
             loss_meter.update(loss.item(), batch_size)
         print('====> Final Test Loss: {:.4f}'.format(loss_meter.avg))
     return loss_meter.avg
@@ -133,6 +128,7 @@ for i in range(1, args.num_iter + 1):
 
 losses = np.array(losses)
 accuracies = np.array(accuracies)
+np.save(os.path.join(args.out_dir, 'accuracies_{}.npy'.format(args.sup_lvl)), accuracies)
 
 print()
 print("======> Average loss: {}".format(np.mean(losses)))

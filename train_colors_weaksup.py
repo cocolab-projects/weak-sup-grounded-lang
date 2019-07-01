@@ -90,7 +90,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs [default: 50]')
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--num_iter', type=int, default = 1,
+    parser.add_argument('--num_iter', type=int, default = 3,
                         help='number of iterations for this setting [default: 1]')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
