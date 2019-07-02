@@ -78,6 +78,15 @@ def hsl2rgb(hsl):
     B = int((Bp + m) * 255.)
     return (R, G, B)
 
+def _kl_normal_normal():
+    return 0
+
+def text_reconstruction():
+    return 0
+
+def reparameterize():
+    return 0
+
 
 def preprocess_text(text):
     text = text.lower() 
