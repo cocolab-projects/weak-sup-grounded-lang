@@ -16,7 +16,7 @@ from torchvision.utils import save_image
 from color_dataset import (ColorDataset, WeakSup_ColorDataset)
 
 from utils import (AverageMeter, save_checkpoint)
-from models import ColorSupervised
+from models import Supervised
 
 if __name__ == '__main__':
     def train(epoch):
@@ -132,7 +132,7 @@ if __name__ == '__main__':
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
         # Define model
-        sup_img = ColorSupervised(vocab_size)
+        sup_img = Supervised(vocab_size)
         sup_img = sup_img.to(device)
         optimizer = torch.optim.Adam(sup_img.parameters(), lr=args.lr)
 
