@@ -50,7 +50,7 @@ if __name__ == '__main__':
         assert (vocab != None)
         print("Computing final accuracy for reference game settings...")
 
-        ref_dataset = Colors_ReferenceGame(vocab, split='Test', )
+        ref_dataset = Colors_ReferenceGame(vocab, split='Test', hard=args.hard)
         ref_loader = DataLoader(ref_dataset, shuffle=False, batch_size=100)
         N_mini_batches = len(ref_loader)
 
@@ -89,8 +89,8 @@ if __name__ == '__main__':
             print()
         return accuracy
 
-    def load_checkpoint(folder='./', filename='model_best.pth.tar'):
-        checkpoint = torch.load(folder + filename)
+    def load_checkpoint(folder='./', filename='model_best'):
+        checkpoint = torch.load(folder + filename + '.pth.tar')
         epoch = checkpoint['epoch']
         track_loss = checkpoint['track_loss']
         sup_img = checkpoint['sup_img']
@@ -118,7 +118,7 @@ if __name__ == '__main__':
     for i in range(1, args.num_iter + 1):
         epoch, track_loss, sup_img, vocab, vocab_size = \
             load_checkpoint(folder=args.load_dir,
-                            filename='checkpoint_{}_{}_best.pth.tar'.format(args.sup_lvl, i) + ('hard' if hard else ''))
+                            filename='checkpoint_{}_{}_best'.format(args.sup_lvl, i))
         
         print("iteration {}".format(i))
         print("best training epoch: {}".format(epoch))
@@ -131,7 +131,7 @@ if __name__ == '__main__':
 
     losses = np.array(losses)
     accuracies = np.array(accuracies)
-    np.save(os.path.join(args.out_dir, 'accuracies_{}.npy'.format(args.sup_lvl)) + ('hard' if hard else ''), accuracies)
+    np.save(os.path.join(args.out_dir, 'accuracies_{}.npy'.format(args.sup_lvl)), accuracies)
 
     print()
     print("======> Average loss: {}".format(np.mean(losses)))

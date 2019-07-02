@@ -149,8 +149,8 @@ class ColorDataset(data.Dataset):
         return self.target_RGBs[index], self.inputs[index], self.lengths[index]
 
 class WeakSup_ColorDataset(ColorDataset):
-    def __init__(self, vocab=None, supervision_level=1.0):
-        super(WeakSup_ColorDataset, self).__init__(vocab=vocab, split='Train', hard=False)
+    def __init__(self, vocab=None, supervision_level=1.0, hard=False):
+        super(WeakSup_ColorDataset, self).__init__(vocab=vocab, split='Train', hard=hard)
         
         self.random_state = np.random.RandomState(18192)
         n = len(self.inputs)

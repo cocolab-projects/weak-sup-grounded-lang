@@ -159,7 +159,7 @@ if __name__ == '__main__':
                 'vocab_size': vocab_size,
                 'seed': random_iter_seed
             }, is_best, folder=args.out_dir,
-                        filename='checkpoint_{}_{}'.format(args.sup_lvl, i) + ('hard' if hard else ''))
+            filename='checkpoint_{}_{}'.format(args.sup_lvl, i))
             np.save(os.path.join(args.out_dir,
                 'loss_{}_{}.npy'.format(args.sup_lvl, i)), track_loss)
 
