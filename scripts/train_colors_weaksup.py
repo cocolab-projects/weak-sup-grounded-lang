@@ -92,6 +92,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_iter', type=int, default = 3,
                         help='number of iterations for this setting [default: 1]')
+    parser.add_argument('--hard', action='store_true', help='whether the dataset is to be easy')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
 
@@ -120,14 +121,14 @@ if __name__ == '__main__':
         device = torch.device('cuda' if args.cuda else 'cpu')
 
         # Define training dataset & build vocab
-        train_dataset = WeakSup_ColorDataset(supervision_level=args.sup_lvl)
+        train_dataset = WeakSup_ColorDataset(supervision_level=args.sup_lvl, hard=args.hard)
         train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
 
         # Define test dataset
-        test_dataset = ColorDataset(vocab=vocab, split='Validation')
+        test_dataset = ColorDataset(vocab=vocab, split='Validation', hard=args.hard)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
         # Define model
@@ -138,7 +139,6 @@ if __name__ == '__main__':
         
         best_loss = float('inf')
         track_loss = np.zeros((args.epochs, 2))
-        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
         
         for epoch in range(1, args.epochs + 1):
             train_loss = train(epoch)

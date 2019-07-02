@@ -36,18 +36,21 @@ MIN_USED = 2
 MAX_LEN = 10
 
 class ColorDataset(data.Dataset):
-    def __init__(self, vocab=None, split='Train'):
+    def __init__(self, vocab=None, split='Train', hard=False):
         with open(os.path.join(RAW_DIR, 'filteredCorpus.csv')) as fp:
             df = pd.read_csv(fp)
         df = df[df['outcome'] == True]
         df = df[df['role'] == 'speaker']
-        df = df[df['condition'] == 'far']
+        if not hard:
+            df = df[df['condition'] == 'far']
+
         self.texts = []
         self.rounds = []
         self.images = []
         self.textsList = [text for text in df['contents']]
         self.roundsList = [roundN for roundN in df['roundNum']]
         self.imagesList = list(zip([itemH for itemH in df['clickColH']], [itemS/100 for itemS in df['clickColS']], [itemL/100 for itemL in df['clickColL']]))
+        
         length = len(self.textsList)
         train_len = int(length * TRAINING_PERCENTAGE)
         test_len = int(length * TESTING_PERCENTAGE)
@@ -63,14 +66,15 @@ class ColorDataset(data.Dataset):
             self.texts = self.textsList[-test_len:]
             self.rounds = self.roundsList[-test_len:]
             self.images = self.imagesList[-test_len:]
+        
         if vocab is None:
             self.vocab = self.build_vocab(self.texts)
         else:
             self.vocab = vocab
         self.vocab_size = len(self.vocab['w2i'])
+        
         self.target_RGBs, self.texts = self.concatenate_by_round(self.texts, self.images, self.rounds)
         self.inputs, self.lengths, self.max_len = self.process_texts(self.texts)
-
         self.target_RGBs = np.array(self.target_RGBs)
 
     def process_texts(self, texts):
@@ -146,7 +150,7 @@ class ColorDataset(data.Dataset):
 
 class WeakSup_ColorDataset(ColorDataset):
     def __init__(self, vocab=None, supervision_level=1.0):
-        super(WeakSup_ColorDataset, self).__init__(vocab=vocab, split='Train')
+        super(WeakSup_ColorDataset, self).__init__(vocab=vocab, split='Train', hard=False)
         
         self.random_state = np.random.RandomState(18192)
         n = len(self.inputs)
@@ -157,7 +161,7 @@ class WeakSup_ColorDataset(ColorDataset):
         self.lengths = self.lengths[supervision]
 
 class Colors_ReferenceGame(data.Dataset):
-    def __init__(self, vocab, split='Test'):
+    def __init__(self, vocab, split='Test', hard=False):
         assert vocab is not None
 
         with open(os.path.join(RAW_DIR, 'filteredCorpus.csv')) as fp:
@@ -165,7 +169,8 @@ class Colors_ReferenceGame(data.Dataset):
         # Only pick out data with true outcomes, far(=easy) conditions, and speaker text
         df = df[df['outcome'] == True]
         df = df[df['role'] == 'speaker']
-        df = df[df['condition'] == 'far']
+        if not hard:
+            df = df[df['condition'] == 'far']
         
         self.texts = []
         self.rounds = []

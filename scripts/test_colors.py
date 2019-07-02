@@ -23,7 +23,7 @@ if __name__ == '__main__':
         assert (vocab != None)
         print("Computing final test loss on newly seen dataset...")
 
-        test_dataset = ColorDataset(vocab=vocab, split=split)
+        test_dataset = ColorDataset(vocab=vocab, split=split, hard=args.hard)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
         N_mini_batches = len(test_loader)
 
@@ -50,7 +50,7 @@ if __name__ == '__main__':
         assert (vocab != None)
         print("Computing final accuracy for reference game settings...")
 
-        ref_dataset = Colors_ReferenceGame(vocab, split='Test')
+        ref_dataset = Colors_ReferenceGame(vocab, split='Test', )
         ref_loader = DataLoader(ref_dataset, shuffle=False, batch_size=100)
         N_mini_batches = len(ref_loader)
 
