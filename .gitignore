@@ -104,3 +104,4 @@ venv.bak/
 .mypy_cache/
 colors_sup/
 colors_weaksup
+notebooks
