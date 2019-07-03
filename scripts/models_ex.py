@@ -69,8 +69,11 @@ class TextEncoder(nn.Module):
         return z_mu, z_logvar
 
 
+class ImageEncoder(nn.Module):
+
+
 class TextDecoder(nn.Module):
-    r"""Parameterizes p(sentence|z) where we use a recurrent
+    """Parameterizes p(sentence|z) where we use a recurrent
     model to generate a distribution of a sequence of tokens.
     Assumes a maximum sequence length and a fixed vocabulary.
     We return logits to a categorical so please use
