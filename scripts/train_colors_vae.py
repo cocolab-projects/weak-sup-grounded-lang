@@ -16,11 +16,22 @@ from torchvision.utils import save_image
 from color_dataset import (ColorDataset, WeakSup_ColorDataset)
 
 from utils import (AverageMeter, save_checkpoint)
-from models import ColorSupervised
+from models import (TextEmbedding, TextEncoder, TextDecoder,
+                    ColorEncoder, MultimodalEncoder, ColorDecoder)
+
+SOS_TOKEN = '<sos>'
+EOS_TOKEN = '<eos>'
+PAD_TOKEN = '<pad>'
+UNK_TOKEN = '<unk>'
 
 if __name__ == '__main__':
     def train(epoch):
-        sup_img.train()
+        vae_emb.train()
+        vae_rgb_enc.train()
+        vae_txt_enc.train()
+        vae_mult_enc.train()
+        vae_rgb_dec.train()
+        vae_txt_dec.train()
 
         loss_meter = AverageMeter()
         pbar = tqdm(total=len(train_loader))
@@ -53,7 +64,12 @@ if __name__ == '__main__':
 
 
     def test(epoch):
-        sup_img.eval()
+        vae_emb.eval()
+        vae_rgb_enc.eval()
+        vae_txt_enc.eval()
+        vae_mult_enc.eval()
+        vae_rgb_dec.eval()
+        vae_txt_dec.eval()
 
         with torch.no_grad():
             loss_meter = AverageMeter()
@@ -83,6 +99,10 @@ if __name__ == '__main__':
     parser.add_argument('out_dir', type=str, help='where to save checkpoints')
     parser.add_argument('sup_lvl', type=float, default = 1.0,
                         help='how much of the data to supervise [default: 1.0]')
+    parser.add_argument('--z_dim', type=int, default=100,
+                        help='number of latent dimension [default = 100]')
+    parser.add_argument('--word_dropout', type=float, default=0.,
+                        help='word dropout in text generation [default = 0.]')
     parser.add_argument('--batch_size', type=int, default=100,
                         help='batch size [default=100]')
     parser.add_argument('--lr', type=float, default=0.001,
@@ -90,7 +110,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs [default: 50]')
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--num_iter', type=int, default = 3,
+    parser.add_argument('--num_iter', type=int, default = 1,
                         help='number of iterations for this setting [default: 1]')
     parser.add_argument('--hard', action='store_true', help='whether the dataset is to be easy')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
@@ -126,17 +146,42 @@ if __name__ == '__main__':
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
+        w2i = vocab['w2i']
 
         # Define test dataset
         test_dataset = ColorDataset(vocab=vocab, split='Validation', hard=args.hard)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
-        # Define model
-        sup_img = ColorSupervised(vocab_size)
-        sup_img = sup_img.to(device)
-        optimizer = torch.optim.Adam(sup_img.parameters(), lr=args.lr)
+        # Define latent dimension |z_dim|
+        z_dim = args.z_dim
 
-        
+        # Define model
+        vae_emb = TextEmbedding(vocab_size)
+        vae_rgb_enc = ColorEncoder(z_dim)
+        vae_txt_enc = TextEncoder(vae_emb, z_dim)
+        vae_mult_enc = MultimodalEncoder(vae_emb, z_dim)
+        vae_rgb_dec = ColorDecoder(z_dim)
+        vae_txt_dec = TextDecoder(vae_emb, z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
+                                    w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.word_dropout)
+
+        # Mount devices unto GPU
+        vae_emb = vae_emb.to(device)
+        vae_rgb_enc = vae_rgb_enc.to(device)
+        vae_txt_enc = vae_txt_enc.to(device)
+        vae_mult_enc = vae_mult_enc.to(device)
+        vae_rgb_dec = vae_rgb_dec.to(device)
+        vae_txt_dec = vae_txt_dec.to(device)
+
+        optimizer = torch.optim.Adam(
+            chain(
+            vae_emb.parameters(),
+            vae_rgb_enc.parameters(),
+            vae_txt_enc.parameters(),
+            vae_mult_enc.parameters(),
+            vae_rgb_dec.parameters(),
+            vae_txt_dec.parameters(),
+        ), lr=args.lr)
+
         best_loss = float('inf')
         track_loss = np.zeros((args.epochs, 2))
         
@@ -151,7 +196,11 @@ if __name__ == '__main__':
             
             save_checkpoint({
                 'epoch': epoch,
-                'sup_img': sup_img.state_dict(),
+                'vae_rgb_enc': vae_rgb_enc.state_dict(),
+                'vae_txt_enc': vae_txt_enc.state_dict(),
+                'vae_mult_enc': vae_mult_enc.state_dict(),
+                'vae_rgb_dec': vae_rgb_dec.state_dict(),
+                'vae_txt_dec': vae_txt_dec.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'track_loss': track_loss,
                 'cmd_line_args': args,

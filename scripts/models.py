@@ -11,6 +11,7 @@ import torch.nn.utils.rnn as rnn_utils
 
 class ColorSupervised(nn.Module):
     """
+    Supervised, x: text, y: image (rgb value)
     @param embedding_module: nn.Embedding
                              pass the embedding module (share with
                              decoder)
@@ -56,8 +57,43 @@ class ColorSupervised(nn.Module):
 
         return self.sequential(hidden)
 
+class TextEmbedding(nn.Module):
+    def __init__(self, vocab_size, hidden_dim=256):
+        super(TextEmbedding, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, hidden_dim)
+    
+    def forward(self, x):
+        return self.embedding(x)
+
 class ColorEncoder(nn.Module):
     """
+    x: text, y: image, z: latent
+    Model p(z|y)
+    @param z_dim: number of latent dimensions
+    @param hidden_dim: integer [default: 256]
+                       number of hidden nodes in GRU
+    """
+    def __init__(self, z_dim, rgb_dim=3, hidden_dim=256):
+        super(Supervised, self).__init__()
+        assert (rgb_dim == 3)
+
+        self.rgb_dim = rgb_dim
+        self.z_dim = z_dim
+        self.hidden_dim = hidden_dim
+        self.sequential = nn.Sequential(nn.Linear(rgb, hidden_dim), \
+                                        nn.ReLU(),  \
+                                        nn.Linear(hidden_dim, z_dim * 2))
+    
+    def forward(self, rgb):
+        # sent rgb value to latent dimension
+        z_mu, z_logvar = torch.chunk(self.sequential(rgb), 2, dim=1)
+        
+        return z_mu, z_logvar
+
+class TextEncoder(nn.Module):
+    """
+    x: text, y: image, z: latent
+    Model p(z|x)
     @param embedding_module: nn.Embedding
                              pass the embedding module (share with
                              decoder)
@@ -65,18 +101,16 @@ class ColorEncoder(nn.Module):
     @param hidden_dim: integer [default: 256]
                        number of hidden nodes in GRU
     """
-    def __init__(self, vocab_size, rgb_dim=3, embedding_dim=64, hidden_dim=256):
+    def __init__(self, embedding_module, z_dim, hidden_dim=256):
         super(Supervised, self).__init__()
         assert (rgb_dim == 3)
 
-        self.rgb_dim = rgb_dim
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.embedding_dim = embedding_dim
+        self.z_dim = z_dim
+        self.embedding = embedding_module
+        self.embedding_dim = embedding_module.embedding.embedding_dim
         self.hidden_dim = hidden_dim
         self.gru = nn.GRU(self.embedding_dim, self.hidden_dim, batch_first=True)
-        self.sequential = nn.Sequential(nn.Linear(hidden_dim, hidden_dim // 4), \
-                                        nn.ReLU(),  \
-                                        nn.Linear(hidden_dim // 4, 3) )
+        self.linear = nn.Linear(hidden_dim, z_dim * 2)
     
     def forward(self, seq, length):
         batch_size = seq.size(0)
@@ -101,36 +135,125 @@ class ColorEncoder(nn.Module):
             _, reversed_idx = torch.sort(sorted_idx)
             hidden = hidden[reversed_idx]
 
-        return self.sequential(hidden)
+        z_mu, z_logvar = torch.chunk(self.linear(hidden), 2, dim=1)
+
+        return z_mu, z_logvar
+
+
+class MultimodalEncoder(nn.Module):
+    """
+    x: text, y: image, z: latent
+    Model p(z|x,y)
+    @param embedding_module: nn.Embedding
+                             pass the embedding module (share with decoder)
+    @param z_dim: number of latent dimensions
+    @param hidden_dim: integer [default: 256]
+                       number of hidden nodes in GRU
+    """
+    def __init__(self, embedding_module, z_dim, rgb_dim=3, hidden_dim=256):
+        super(Supervised, self).__init__()
+        assert (rgb_dim == 3)
+
+        self.z_dim = z_dim
+        self.rgb_dim = rgb_dim
+        self.embedding = embedding_module
+        self.embedding_dim = embedding_module.embedding.embedding_dim
+        self.hidden_dim = hidden_dim
+        self.gru = nn.GRU(self.embedding_dim, self.hidden_dim, batch_first=True)
+        self.txt_lin = nn.Linear(hidden_dim, hidden_dim // 2)
+        self.rgb_seq = nn.Sequential(nn.Linear(rgb, hidden_dim), \
+                                        nn.ReLU(),  \
+                                        nn.Linear(hidden_dim, hidden_dim // 2))
+        self.linear = nn.Linear(hidden_dim, z_dim * 2)
+    
+    def forward(self, rgb, seq, length):
+        batch_size = seq.size(0)
+
+        if batch_size > 1:
+            sorted_lengths, sorted_idx = torch.sort(length, descending=True)
+            seq = seq[sorted_idx]
+
+        # embed sequences
+        embed_seq = self.embedding(seq)
+
+        # pack padded sequences
+        packed = rnn_utils.pack_padded_sequence(
+            embed_seq,
+            sorted_lengths.data.tolist() if batch_size > 1 else length.data.tolist(), batch_first=True)
+
+        # forward RNN
+        _, hidden = self.gru(packed)
+        hidden = hidden[-1, ...]
+        
+        if batch_size > 1:
+            _, reversed_idx = torch.sort(sorted_idx)
+            hidden = hidden[reversed_idx]
+
+        txt_hidden = self.text_lin(hidden)
+        rgb_hidden = self.color_seq(rgb)
+
+        concat = torch.cat((txt_hidden, rgb_hidden), 0)
+        z_mu, z_logvar = torch.chunk(self.linear(concat), 2, dim=1)
+
+        return z_mu, z_logvar
 
 
 class ColorDecoder(nn.Module):
     """
+    x: text, y: image, z: latent
+    Model p(y|z)
+    @param z_dim: number of latent dimensions
+    """
+    def __init__(self, z_dim, hidden_dim=256, rgb_dim=3):
+        super(Supervised, self).__init__()
+        assert (rgb_dim == 3)
+
+        self.z_dim = z_dim
+        self.rgb_dim = rgb_dim
+        self.hidden_dim = hidden_dim
+        self.rgb_dim = rgb_dim
+        self.sequential = nn.Sequential(nn.Linear(z_dim, hidden_dim), \
+                                        nn.ReLU(),  \
+                                        nn.Linear(hidden_dim, rgb_dim) )
+    
+    def forward(self, z_sample):
+        return self.sequential(z_sample)
+
+class TextDecoder(nn.Module):
+    """
+    x: text, y: image, z: latent
+    Model p(x|z)
     @param embedding_module: nn.Embedding
-                             pass the embedding module (share with
-                             decoder)
+                             pass the embedding module (share with decoder)
     @param z_dim: number of latent dimensions
     @param hidden_dim: integer [default: 256]
                        number of hidden nodes in GRU
     """
-    def __init__(self, vocab_size, rgb_dim=3, embedding_dim=64, hidden_dim=256):
-        super(Supervised, self).__init__()
-        assert (rgb_dim == 3)
-
-        self.rgb_dim = rgb_dim
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.embedding_dim = embedding_dim
+    def __init__(self, embedding_module, z_dim, sos_index, eos_index,
+                 pad_index, unk_index, hidden_dim=256, word_dropout=0.,
+                 embedding_dropout=0.):
+        super(TextDecoder, self).__init__()
+        self.z_dim = z_dim
+        self.embedding = embedding_module
+        self.embedding_dim = embedding_module.embedding.embedding_dim
+        self.vocab_size = embedding_module.embedding.num_embeddings
         self.hidden_dim = hidden_dim
+        self.sos_index = sos_index
+        self.eos_index = eos_index
+        self.pad_index = pad_index
+        self.unk_index = unk_index
         self.gru = nn.GRU(self.embedding_dim, self.hidden_dim, batch_first=True)
-        self.sequential = nn.Sequential(nn.Linear(hidden_dim, hidden_dim // 4), \
-                                        nn.ReLU(),  \
-                                        nn.Linear(hidden_dim // 4, 3) )
+        self.outputs2vocab = nn.Linear(self.hidden_dim, self.vocab_size)
+        self.latent2hidden = nn.Linear(self.z_dim, self.hidden_dim)
+        self.word_dropout = word_dropout
+        self.embedding_dropout = nn.Dropout(p=embedding_dropout)
     
-    def forward(self, seq, length):
+    def forward(self, z_sample, seq, length):
         batch_size = seq.size(0)
 
         if batch_size > 1:
             sorted_lengths, sorted_idx = torch.sort(length, descending=True)
+            z = z[sorted_idx]
             seq = seq[sorted_idx]
 
         # embed sequences
@@ -150,4 +273,3 @@ class ColorDecoder(nn.Module):
             hidden = hidden[reversed_idx]
 
         return self.sequential(hidden)
-
