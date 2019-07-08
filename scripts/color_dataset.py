@@ -24,7 +24,7 @@ from nltk.tokenize import RegexpTokenizer
 from collections import defaultdict
 
 FILE_DIR = os.path.realpath(os.path.dirname(__file__))
-RAW_DIR = os.path.join(FILE_DIR, '../')
+RAW_DIR = os.path.realpath(os.path.join(FILE_DIR, '../'))
 
 SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
@@ -87,8 +87,15 @@ class ColorDataset(data.Dataset):
             target_tokens = tokens + [EOS_TOKEN]
             assert len(source_tokens) == len(target_tokens)
             length = len(source_tokens)
-            source_tokens.extend([PAD_TOKEN] * (max_len - length))
-            target_tokens.extend([PAD_TOKEN] * (max_len - length))
+            if length < MAX_LEN:
+                source_tokens.extend([PAD_TOKEN] * (MAX_LEN - length))
+                target_tokens.extend([PAD_TOKEN] * (MAX_LEN - length))
+            else:
+                source_tokens = source_tokens[:MAX_LEN]
+                target_tokens = target_tokens[:MAX_LEN - 1] + [EOS_TOKEN]
+                length = MAX_LEN
+            assert len(source_tokens) == 10, breakpoint()
+            assert len(target_tokens) == 10
             source_indices = [self.vocab['w2i'].get(token, self.vocab['w2i'][UNK_TOKEN]) for token in source_tokens]
             target_indices = [self.vocab['w2i'].get(token, self.vocab['w2i'][UNK_TOKEN]) for token in target_tokens]
 
@@ -144,7 +151,7 @@ class ColorDataset(data.Dataset):
         return vocab
 
     def __len__(self):
-        return len(self.inputs)
+        return len(self.txt_sources)
 
     def __getitem__(self, index):
         return self.rgb_targets[index], self.txt_sources[index], self.txt_targets[index], self.lengths[index]
@@ -154,10 +161,11 @@ class WeakSup_ColorDataset(ColorDataset):
         super(WeakSup_ColorDataset, self).__init__(vocab=vocab, split='Train', hard=hard)
         
         self.random_state = np.random.RandomState(18192)
-        n = len(self.inputs)
+        n = len(self.txt_sources)
         supervision = self.random_state.binomial(1, supervision_level, size=n)
         supervision = supervision.astype(np.bool)
-        self.inputs = self.inputs[supervision]
+        self.txt_sources = self.txt_sources[supervision]
+        self.txt_targets = self.txt_targets[supervision]
         self.rgb_targets = self.rgb_targets[supervision]
         self.lengths = self.lengths[supervision]
 
@@ -229,6 +237,8 @@ class Colors_ReferenceGame(data.Dataset):
             length = len(source_tokens)
             source_tokens.extend([PAD_TOKEN] * (max_len - length))
             target_tokens.extend([PAD_TOKEN] * (max_len - length))
+            assert len(source_tokens) == 10
+            assert len(target_tokens) == 10
             source_indices = [self.vocab['w2i'].get(token, self.vocab['w2i'][UNK_TOKEN]) for token in source_tokens]
             target_indices = [self.vocab['w2i'].get(token, self.vocab['w2i'][UNK_TOKEN]) for token in target_tokens]
 
@@ -263,5 +273,5 @@ class Colors_ReferenceGame(data.Dataset):
         return len(self.inputs)
 
     def __getitem__(self, index):
-        return self.rgb_targets[index], self.d1_RGBs[index], self.d2_RGBs[index], self.txt_sources[index], self.txt_targets, self.lengths[index]
+        return self.rgb_targets[index], self.d1_RGBs[index], self.d2_RGBs[index], self.txt_sources[index], self.txt_targets[index], self.lengths[index]
 

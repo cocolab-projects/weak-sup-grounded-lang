@@ -9,6 +9,11 @@ from models import (TextEmbedding, TextEncoder, TextDecoder,
                     ColorEncoder, MultimodalEncoder, ColorDecoder)
 from color_dataset import (ColorDataset, Colors_ReferenceGame)
 
+SOS_TOKEN = '<sos>'
+EOS_TOKEN = '<eos>'
+PAD_TOKEN = '<pad>'
+UNK_TOKEN = '<unk>'
+
 if __name__ == '__main__':
     def test_loss(vocab, split='Test'):
         '''
@@ -37,9 +42,9 @@ if __name__ == '__main__':
                 z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_tgt, x_len)
 
                 # sample via reparametrization
-                z_sample_x = reparametrize(z_x_mu, z_x_logvar)
-                z_sample_y = reparametrize(z_y_mu, z_y_logvar)
-                z_sample_xy = reparametrize(z_xy_mu, z_xy_logvar)
+                z_sample_x = reparameterize(z_x_mu, z_x_logvar)
+                z_sample_y = reparameterize(z_y_mu, z_y_logvar)
+                z_sample_xy = reparameterize(z_xy_mu, z_xy_logvar)
 
                 # "predictions"
                 y_mu_z_y = vae_rgb_dec(z_sample_y)
@@ -94,9 +99,9 @@ if __name__ == '__main__':
                 z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_tgt, x_len)
 
                 # sample via reparametrization
-                z_sample_x = reparametrize(z_x_mu, z_x_logvar)
-                z_sample_y = reparametrize(z_y_mu, z_y_logvar)
-                z_sample_xy = reparametrize(z_xy_mu, z_xy_logvar)
+                z_sample_x = reparameterize(z_x_mu, z_x_logvar)
+                z_sample_y = reparameterize(z_y_mu, z_y_logvar)
+                z_sample_xy = reparameterize(z_xy_mu, z_xy_logvar)
 
                 # "predictions"
                 y_mu_z_y = vae_rgb_dec(z_sample_y)
@@ -133,6 +138,7 @@ if __name__ == '__main__':
         vae_txt_dec_sd = checkpoint['vae_txt_dec']
         vocab = checkpoint['vocab']
         w2i = vocab['w2i']
+        pad_index = w2i[PAD_TOKEN]
         vocab_size = checkpoint['vocab_size']
         args = checkpoint['cmd_line_args']
 

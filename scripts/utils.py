@@ -3,7 +3,10 @@ from __future__ import print_function
 import os
 import sys
 import numpy as np
-import torch
+import torch 
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
 import shutil
 from tqdm import tqdm
 from itertools import chain
@@ -86,31 +89,40 @@ def reparameterize(mu, logvar):
     epsilon = np.random.randn()
     return torch.exp(0.5 * logvar) * epsilon + mu
 
-def score_txt_logits
+def score_txt_logits(text_seq, text_logits, ignore_index):
+    n, s, v = text_logits.size()
+    text_logits_2d = text_logits.contiguous().view(n * s, v)
+    text_seq_2d = text_seq[:, :s].contiguous().view(n * s)
+    loss = -F.cross_entropy(text_logits_2d, text_seq_2d, 
+                            ignore_index=ignore_index, reduction='none')
+    loss = loss.view(n, s)
+    loss = torch.sum(loss, dim=1)
 
-def loss_multimodal(out, batch_size):
-    log_p_x_given_z = -score_txt_logits(out['x'].view(batch_size, -1), out['x_logit_z_x'].view(batch_size, -1))
+    return loss
+
+def loss_multimodal(out, batch_size, alpha=1, beta=10):
+    log_p_x_given_z = -score_txt_logits(out['x'], out['x_logit_z_x'], out['pad_index'])
     kl_q_z_given_x_and_p_z = -0.5 * (1 + out['z_x_logvar'] - out['z_x_mu'].pow(2) - out['z_x_logvar'].exp())
     kl_q_z_given_x_and_p_z = torch.sum(kl_q_z_given_x_and_p_z, dim=1)
-    elbo_x = self.config.loss_params.lambda_x * log_p_x_given_z + kl_q_z_given_x_and_p_z
+    elbo_x = alpha * log_p_x_given_z + kl_q_z_given_x_and_p_z
     elbo_x = torch.mean(elbo_x)
 
     log_p_y_given_z = -torch.mean(torch.pow(out['y'] - out['y_mu_z_y'], 2))
     kl_q_z_given_y_and_p_z = -0.5 * (1 + out['z_y_logvar'] - out['z_y_mu'].pow(2) - out['z_y_logvar'].exp())
     kl_q_z_given_y_and_p_z = torch.sum(kl_q_z_given_y_and_p_z, dim=1)
-    elbo_y = self.config.loss_params.lambda_y * log_p_y_given_z + kl_q_z_given_y_and_p_z
+    elbo_y = beta * log_p_y_given_z + kl_q_z_given_y_and_p_z
     elbo_y = torch.mean(elbo_y)
 
-    log_p_x_given_z = -score_txt_logits(out['x'].view(batch_size, -1), out['x_logit_z_xy'].view(batch_size, -1))
+    log_p_x_given_z = -score_txt_logits(out['x'], out['x_logit_z_xy'], out['pad_index'])
     kl_q_z_given_xy_q_z_given_y = _kl_normal_normal(out['z_xy_mu'], out['z_y_mu'], out['z_xy_logvar'], out['z_y_logvar'])
     kl_q_z_given_xy_q_z_given_y = torch.sum(kl_q_z_given_xy_q_z_given_y, dim=1)
-    elbo_x_given_y = self.config.loss_params.lambda_x * log_p_x_given_z + kl_q_z_given_xy_q_z_given_y
+    elbo_x_given_y = alpha * log_p_x_given_z + kl_q_z_given_xy_q_z_given_y
     elbo_x_given_y = torch.mean(elbo_x_given_y)
 
     log_p_y_given_z = -torch.mean(torch.pow(out['y'] - out['y_mu_z_xy'], 2))
     kl_q_z_given_xy_q_z_given_x = _kl_normal_normal(out['z_xy_mu'], out['z_x_mu'], out['z_xy_logvar'], out['z_x_logvar'])
     kl_q_z_given_xy_q_z_given_x = torch.sum(kl_q_z_given_xy_q_z_given_x, dim=1)
-    elbo_y_given_x = self.config.loss_params.lambda_y * log_p_y_given_z + kl_q_z_given_xy_q_z_given_x
+    elbo_y_given_x = beta * log_p_y_given_z + kl_q_z_given_xy_q_z_given_x
     elbo_y_given_x = torch.mean(elbo_y_given_x)
 
     loss = elbo_x + elbo_y + elbo_x_given_y + elbo_y_given_x

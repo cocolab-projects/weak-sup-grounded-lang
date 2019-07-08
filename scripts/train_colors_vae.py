@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from color_dataset import (ColorDataset, WeakSup_ColorDataset)
 
-from utils import (AverageMeter, save_checkpoint, loss_multimodal)
+from utils import (AverageMeter, save_checkpoint, reparameterize, loss_multimodal)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
                     ColorEncoder, MultimodalEncoder, ColorDecoder)
 
@@ -48,9 +48,9 @@ if __name__ == '__main__':
             z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_tgt, x_len)
 
             # sample via reparametrization
-            z_sample_x = reparametrize(z_x_mu, z_x_logvar)
-            z_sample_y = reparametrize(z_y_mu, z_y_logvar)
-            z_sample_xy = reparametrize(z_xy_mu, z_xy_logvar)
+            z_sample_x = reparameterize(z_x_mu, z_x_logvar)
+            z_sample_y = reparameterize(z_y_mu, z_y_logvar)
+            z_sample_xy = reparameterize(z_xy_mu, z_xy_logvar)
 
             # "predictions"
             y_mu_z_y = vae_rgb_dec(z_sample_y)
@@ -63,7 +63,7 @@ if __name__ == '__main__':
                     'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
                     'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
                     'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                    'y': y_rgb, 'x': x_tgt}
+                    'y': y_rgb, 'x': x_tgt, 'pad_index': pad_index}
 
             # compute loss
             loss = loss_multimodal(out, batch_size)
@@ -95,7 +95,7 @@ if __name__ == '__main__':
             loss_meter = AverageMeter()
             pbar = tqdm(total=len(test_loader))
 
-            for batch_idx, (y_rgb, x_inp, x_len) in enumerate(test_loader):
+            for batch_idx, (y_rgb, x_src, x_tgt, x_len) in enumerate(train_loader):
                 batch_size = x_src.size(0) 
                 y_rgb = y_rgb.to(device).float()
                 x_src = x_src.to(device)
@@ -108,9 +108,9 @@ if __name__ == '__main__':
                 z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_tgt, x_len)
 
                 # sample via reparametrization
-                z_sample_x = reparametrize(z_x_mu, z_x_logvar)
-                z_sample_y = reparametrize(z_y_mu, z_y_logvar)
-                z_sample_xy = reparametrize(z_xy_mu, z_xy_logvar)
+                z_sample_x = reparameterize(z_x_mu, z_x_logvar)
+                z_sample_y = reparameterize(z_y_mu, z_y_logvar)
+                z_sample_xy = reparameterize(z_xy_mu, z_xy_logvar)
 
                 # "predictions"
                 y_mu_z_y = vae_rgb_dec(z_sample_y)
@@ -123,7 +123,7 @@ if __name__ == '__main__':
                         'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
                         'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
                         'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                        'y': y_rgb, 'x_tgt': x_tgt}
+                        'y': y_rgb, 'x': x_tgt, 'pad_index': pad_index}
 
                 # compute loss
                 loss = loss_multimodal(out, batch_size)
@@ -189,6 +189,7 @@ if __name__ == '__main__':
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
         w2i = vocab['w2i']
+        pad_index = w2i[PAD_TOKEN]
 
         # Define test dataset
         test_dataset = ColorDataset(vocab=vocab, split='Validation', hard=args.hard)
