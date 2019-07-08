@@ -52,6 +52,7 @@ if __name__ == '__main__':
             z_sample_y = reparametrize(z_y_mu, z_y_logvar)
             z_sample_xy = reparametrize(z_xy_mu, z_xy_logvar)
 
+            # "predictions"
             y_mu_z_y = vae_rgb_dec(z_sample_y)
             y_mu_z_xy = vae_rgb_dec(z_sample_xy)
             x_logit_z_x = vae_txt_dec(z_sample_x, x_tgt, x_len)
@@ -62,7 +63,7 @@ if __name__ == '__main__':
                     'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
                     'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
                     'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                    'y': y_rgb, 'x_tgt': x_tgt}
+                    'y': y_rgb, 'x': x_tgt}
 
             # compute loss
             loss = loss_multimodal(out, batch_size)
@@ -95,16 +96,38 @@ if __name__ == '__main__':
             pbar = tqdm(total=len(test_loader))
 
             for batch_idx, (y_rgb, x_inp, x_len) in enumerate(test_loader):
-                batch_size = x_inp.size(0)
+                batch_size = x_src.size(0) 
                 y_rgb = y_rgb.to(device).float()
-                x_inp = x_inp.to(device)
+                x_src = x_src.to(device)
+                x_tgt = x_tgt.to(device)
                 x_len = x_len.to(device)
 
-                pred_rgb = sup_img(x_inp, x_len)
-                pred_rgb = torch.sigmoid(pred_rgb)
+                # Encode to |z|
+                z_x_mu, z_x_logvar = vae_txt_enc(x_tgt, x_len)
+                z_y_mu, z_y_logvar = vae_rgb_enc(y_rgb)
+                z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_tgt, x_len)
 
-                loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
-                loss_meter.update(loss.item(), batch_size)  
+                # sample via reparametrization
+                z_sample_x = reparametrize(z_x_mu, z_x_logvar)
+                z_sample_y = reparametrize(z_y_mu, z_y_logvar)
+                z_sample_xy = reparametrize(z_xy_mu, z_xy_logvar)
+
+                # "predictions"
+                y_mu_z_y = vae_rgb_dec(z_sample_y)
+                y_mu_z_xy = vae_rgb_dec(z_sample_xy)
+                x_logit_z_x = vae_txt_dec(z_sample_x, x_tgt, x_len)
+                x_logit_z_xy = vae_txt_dec(z_sample_xy, x_tgt, x_len)
+
+                out = {'z_x_mu': z_x_mu, 'z_x_logvar': z_x_logvar,
+                        'z_y_mu': z_y_mu, 'z_y_logvar': z_y_logvar,
+                        'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
+                        'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
+                        'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
+                        'y': y_rgb, 'x_tgt': x_tgt}
+
+                # compute loss
+                loss = loss_multimodal(out, batch_size)
+                loss_meter.update(loss.item(), batch_size)
 
                 pbar.update()
             pbar.close()
@@ -131,7 +154,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_iter', type=int, default = 1,
                         help='number of iterations for this setting [default: 1]')
-    parser.add_argument('--hard', action='store_true', help='whether the dataset is to be easy')
+    parser.add_argument('--hard', action='store_true', help='whether the dataset is to include all data')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
 
@@ -215,6 +238,7 @@ if __name__ == '__main__':
             
             save_checkpoint({
                 'epoch': epoch,
+                'vae_emb': vae_emb.state_dict(),
                 'vae_rgb_enc': vae_rgb_enc.state_dict(),
                 'vae_txt_enc': vae_txt_enc.state_dict(),
                 'vae_mult_enc': vae_mult_enc.state_dict(),
