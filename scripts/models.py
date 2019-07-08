@@ -112,11 +112,11 @@ class TextEncoder(nn.Module):
         self.gru = nn.GRU(self.embedding_dim, self.hidden_dim, batch_first=True)
         self.linear = nn.Linear(hidden_dim, z_dim * 2)
     
-    def forward(self, seq, length):
+    def forward(self, seq, lengths):
         batch_size = seq.size(0)
 
         if batch_size > 1:
-            sorted_lengths, sorted_idx = torch.sort(length, descending=True)
+            sorted_lengths, sorted_idx = torch.sort(lengths, descending=True)
             seq = seq[sorted_idx]
 
         # embed sequences
@@ -125,7 +125,7 @@ class TextEncoder(nn.Module):
         # pack padded sequences
         packed = rnn_utils.pack_padded_sequence(
             embed_seq,
-            sorted_lengths.data.tolist() if batch_size > 1 else length.data.tolist(), batch_first=True)
+            sorted_lengths.data.tolist() if batch_size > 1 else lengths.data.tolist(), batch_first=True)
 
         # forward RNN
         _, hidden = self.gru(packed)
@@ -214,10 +214,10 @@ class ColorDecoder(nn.Module):
         self.rgb_dim = rgb_dim
         self.sequential = nn.Sequential(nn.Linear(z_dim, hidden_dim), \
                                         nn.ReLU(),  \
-                                        nn.Linear(hidden_dim, rgb_dim) )
+                                        nn.Linear(hidden_dim, rgb_dim))
     
     def forward(self, z_sample):
-        return self.sequential(z_sample)
+        return torch.sigmoid(self.sequential(z_sample))
 
 class TextDecoder(nn.Module):
     """
@@ -255,21 +255,40 @@ class TextDecoder(nn.Module):
             sorted_lengths, sorted_idx = torch.sort(length, descending=True)
             z = z[sorted_idx]
             seq = seq[sorted_idx]
+        else:
+            sorted_lengths = length  # since we use this variable later
+
+        if self.word_dropout > 0:
+            # randomly replace with unknown tokens
+            prob = torch.rand(seq.size())
+            prob[(seq.cpu().data - self.sos_index) & \
+                 (seq.cpu().data - self.pad_index) == 0] = 1
+            mask_seq = seq.clone()
+            mask_seq[(prob < self.word_dropout).to(z.device)] = self.unk_index
+            seq = mask_seq
 
         # embed sequences
         embed_seq = self.embedding(seq)
 
         # pack padded sequences
-        packed = rnn_utils.pack_padded_sequence(
-            embed_seq,
-            sorted_lengths.data.tolist() if batch_size > 1 else length.data.tolist(), batch_first=True)
+        packed = rnn_utils.pack_padded_sequence(embed_seq, sorted_lengths)
 
-        # forward RNN
-        _, hidden = self.gru(packed)
-        hidden = hidden[-1, ...]
+        # initialize hidden (initialize |z| part in |p(x_i|z, x_{i-1})| )
+        hidden = latent2hidden(z)
+        hidden = hidden.unsqueeze(0).contiguous()
+
+        # forward RNN (recurrently obtain |x_i| given |z| and |x_{i-1})
+        packed_output, _ = self.gru(packed, hidden)
+        output = rnn_utils.pad_packed_sequence(packed_output)
+        output = output[0].contiguous()
         
         if batch_size > 1:
             _, reversed_idx = torch.sort(sorted_idx)
             hidden = hidden[reversed_idx]
 
-        return self.sequential(hidden)
+        max_length = output.size(1)
+        output_2d = output.view(batch_size * max_length, self.hidden_dim)
+        outputs_2d = self.outputs2vocab(output_2d)
+        outputs = outputs_2d.view(batch_size, max_length, self.vocab_size)
+
+        return outputs
