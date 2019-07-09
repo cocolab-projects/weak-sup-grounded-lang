@@ -5,7 +5,7 @@ import numpy as np
 import torch 
 from torch.utils.data import DataLoader
 from utils import (AverageMeter)
-from models import (ColorSupervised)
+from models import (ColorSupervised, ColorSupervised_Paired)
 from color_dataset import (ColorDataset, Colors_ReferenceGame, WeakSup_ColorReference)
 
 if __name__ == '__main__':
@@ -24,7 +24,7 @@ if __name__ == '__main__':
     # set learning device
     args.cuda = args.cuda and torch.cuda.is_available()
     device = torch.device('cuda' if args.cuda else 'cpu')
-
+    
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
@@ -38,24 +38,28 @@ if __name__ == '__main__':
         assert vocab != None
         print("Computing final test loss on newly seen dataset...")
 
-        test_dataset = ColorDataset(vocab=vocab, split=split, hard=args.hard)
+        test_dataset = Colors_ReferenceGame(vocab=vocab, split=split, hard=args.hard)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
 
         model.eval()
         with torch.no_grad():
             loss_meter = AverageMeter()
 
-            for batch_idx, (tgt_rgb, x_inp, x_tgt, x_len) in enumerate(test_loader):
+            for batch_idx, (tgt_rgb, d1_rgb, d2_rgb, x_inp, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_inp.size(0)
                 tgt_rgb = tgt_rgb.to(device).float()
+                d1_rgb = d1_rgb.to(device).float()
+                d2_rgb = d2_rgb.to(device).float()
                 x_inp = x_inp.to(device)
                 x_len = x_len.to(device)
 
                 # obtain predicted rgb
-                pred_rgb = sup_img(tgt_rgb, x_inp, x_len)
+                tgt_score = model(tgt_rgb, x_inp, x_len)
+                d1_score = model(d1_rgb, x_inp, x_len)
+                d2_score = model(d2_rgb, x_inp, x_len)
 
                 # loss between actual and predicted rgb: cross entropy
-                loss = torch.mean(torch.pow(tgt_rgb - pred_rgb), 2)
+                loss = F.cross_entropy(torch.cat([tgt_score,d1_score,d2_score], 1), torch.LongTensor(np.zeros(batch_size)))
                 loss_meter.update(loss.item(), batch_size)
             print('====> Final Test Loss: {:.4f}'.format(loss_meter.avg))
         return loss_meter.avg
@@ -87,20 +91,19 @@ if __name__ == '__main__':
                 x_len = x_len.to(device)
 
                 # obtain predicted rgb
-                pred_rgb = sup_img(tgt_rgb, x_inp, x_len)
-                d1_score = sup_img(d1_rgb, x_inp, x_len)
-                d2_score = sup_img(d2_rgb, x_inp, x_len)
+                tgt_score = model(tgt_rgb, x_inp, x_len)
+                d1_score = model(d1_rgb, x_inp, x_len)
+                d2_score = model(d2_rgb, x_inp, x_len)
 
                 # loss between actual and predicted rgb: cross entropy
-                loss = torch.mean(torch.pow(tgt_rgb - pred_rgb), 2)
+                loss = F.cross_entropy(torch.cat([tgt_score,d1_score,d2_score], 1), torch.LongTensor(np.zeros(batch_size)))
 
-                diff_tgt = torch.mean(torch.pow(pred_rgb - tgt_rgb, 2))
-                diff_d1 = torch.mean(torch.pow(pred_rgb - d1_rgb, 2))
-                diff_d2 = torch.mean(torch.pow(pred_rgb - d2_rgb, 2))
+                soft = nn.Softmax(dim=1)
+                loss = soft(torch.cat([tgt_score,d1_score,d2_score], 1))
+                softList = torch.argmax(loss, dim=1)
 
-                total_count += diff_tgt.size(0)
-                correctList = diff_tgt < diff_d1 and diff_d1 < diff_d2
-                correct_count += torch.sum(correctList).item()
+                correct_count += torch.sum(softList == 0).item()
+                total_count += softList.size(0)
 
                 loss_meter.update(loss.item(), batch_size)
 
@@ -112,29 +115,29 @@ if __name__ == '__main__':
         checkpoint = torch.load(folder + filename + '.pth.tar')
         epoch = checkpoint['epoch']
         track_loss = checkpoint['track_loss']
-        sup_img = checkpoint['sup_img']
+        sup_img_sd = checkpoint['sup_img']
         vocab = checkpoint['vocab']
         vocab_size = checkpoint['vocab_size']
-        return epoch, track_loss, sup_img, vocab, vocab_size
+        return epoch, track_loss, sup_img_sd, vocab, vocab_size
 
     print("=== begin testing ===")
 
     losses, accuracies = [], []
     for iter_num in range(1, args.num_iter + 1):
         print("loading checkpoint ...")
-        epoch, track_loss, sup_img, vocab, vocab_size = \
+        epoch, track_loss, sup_img_sd, vocab, vocab_size = \
             load_checkpoint(folder=args.load_dir,
                             filename='checkpoint_{}_{}_best'.format(args.sup_lvl, iter_num))
         print("iteration {}".format(iter_num))
         print("best training epoch: {}".format(epoch))
 
-        txt2img = ColorSupervised(vocab_size)
-        txt2img.load_state_dict(sup_img)
+        sup_img = ColorSupervised_Paired(vocab_size)
+        sup_img.load_state_dict(sup_img_sd)
 
-        txt2img = txt2img.to(device)
+        sup_img = sup_img.to(device)
 
-        losses.append(test_loss(txt2img, vocab))
-        accuracies.append(test_refgame_accuracy(txt2img, vocab))
+        losses.append(test_loss(sup_img, vocab))
+        accuracies.append(test_refgame_accuracy(sup_img, vocab))
 
     losses = np.array(losses)
     accuracies = np.array(accuracies)

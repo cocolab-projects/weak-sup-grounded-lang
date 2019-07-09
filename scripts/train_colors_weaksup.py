@@ -24,7 +24,7 @@ if __name__ == '__main__':
 
         loss_meter = AverageMeter()
         pbar = tqdm(total=len(train_loader))
-        for batch_idx, (y_rgb, x_inp, x_len) in enumerate(train_loader):
+        for batch_idx, (y_rgb, x_inp, x_tgt, x_len) in enumerate(train_loader):
             batch_size = x_inp.size(0) 
             y_rgb = y_rgb.to(device).float()
             x_inp = x_inp.to(device)
@@ -59,7 +59,7 @@ if __name__ == '__main__':
             loss_meter = AverageMeter()
             pbar = tqdm(total=len(test_loader))
 
-            for batch_idx, (y_rgb, x_inp, x_len) in enumerate(test_loader):
+            for batch_idx, (y_rgb, x_inp, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_inp.size(0)
                 y_rgb = y_rgb.to(device).float()
                 x_inp = x_inp.to(device)

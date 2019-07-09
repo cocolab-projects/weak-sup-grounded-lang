@@ -13,70 +13,13 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
-from color_dataset import (ColorDataset, WeakSup_ColorDataset)
+from color_dataset import (ColorDataset, WeakSup_ColorDataset,
+                            WeakSup_ColorReference, Colors_ReferenceGame)
 
 from utils import (AverageMeter, save_checkpoint)
-from models import Supervised
+from models import ColorSupervised, ColorSupervised_Paired
 
 if __name__ == '__main__':
-    def train(epoch):
-        sup_img.train()
-
-        loss_meter = AverageMeter()
-        pbar = tqdm(total=len(train_loader))
-        for batch_idx, (y_rgb, x_inp, x_len) in enumerate(train_loader):
-            batch_size = x_inp.size(0) 
-            y_rgb = y_rgb.to(device).float()
-            x_inp = x_inp.to(device)
-            x_len = x_len.to(device)
-
-            # obtain predicted rgb
-            pred_rgb = sup_img(x_inp, x_len)
-            pred_rgb = torch.sigmoid(pred_rgb)
-
-            # loss between actual and predicted rgb: Mean Squared Error
-            loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
-
-            loss_meter.update(loss.item(), batch_size)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            pbar.set_postfix({'loss': loss_meter.avg})
-            pbar.update()
-        pbar.close()
-            
-        if epoch % 10 == 0:
-            print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
-        
-        return loss_meter.avg
-
-
-    def test(epoch):
-        sup_img.eval()
-
-        with torch.no_grad():
-            loss_meter = AverageMeter()
-            pbar = tqdm(total=len(test_loader))
-
-            for batch_idx, (y_rgb, x_inp, x_len) in enumerate(test_loader):
-                batch_size = x_inp.size(0)
-                y_rgb = y_rgb.to(device).float()
-                x_inp = x_inp.to(device)
-                x_len = x_len.to(device)
-
-                pred_rgb = sup_img(x_inp, x_len)
-                pred_rgb = torch.sigmoid(pred_rgb)
-
-                loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
-                loss_meter.update(loss.item(), batch_size)  
-
-                pbar.update()
-            pbar.close()
-            if epoch % 10 == 0:
-                print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
-        return loss_meter.avg
-
     # Parse arguments
     import argparse
     parser = argparse.ArgumentParser()
@@ -102,6 +45,72 @@ if __name__ == '__main__':
     random.seed(args.seed)
     np.random.seed(args.seed)
 
+    def train(epoch):
+        sup_img.train()
+
+        loss_meter = AverageMeter()
+        pbar = tqdm(total=len(train_loader))
+        for batch_idx, (tgt_rgb, d1_rgb, d2_rgb, x_inp, x_tgt, x_len) in enumerate(train_loader):
+            batch_size = x_inp.size(0) 
+            tgt_rgb = tgt_rgb.to(device).float()
+            d1_rgb = d1_rgb.to(device).float()
+            d2_rgb = d2_rgb.to(device).float()
+            x_inp = x_inp.to(device)
+            x_len = x_len.to(device)
+
+            # obtain predicted rgb
+            tgt_score = sup_img(tgt_rgb, x_inp, x_len)
+            d1_score = sup_img(d1_rgb, x_inp, x_len)
+            d2_score = sup_img(d2_rgb, x_inp, x_len)
+
+            # loss: cross entropy
+            loss = F.cross_entropy(torch.cat([tgt_score,d1_score,d2_score], 1), torch.LongTensor(np.zeros(batch_size)).to(device))
+
+            loss_meter.update(loss.item(), batch_size)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            pbar.set_postfix({'loss': loss_meter.avg})
+            pbar.update()
+        pbar.close()
+            
+        if epoch % 10 == 0:
+            print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
+        
+        return loss_meter.avg
+
+
+    def test(epoch):
+        sup_img.eval()
+
+        with torch.no_grad():
+            loss_meter = AverageMeter()
+            pbar = tqdm(total=len(test_loader))
+
+            for batch_idx, (tgt_rgb, d1_rgb, d2_rgb, x_inp, x_tgt, x_len) in enumerate(test_loader):
+                batch_size = x_inp.size(0)
+                tgt_rgb = tgt_rgb.to(device).float()
+                d1_rgb = d1_rgb.to(device).float()
+                d2_rgb = d2_rgb.to(device).float()
+                x_inp = x_inp.to(device)
+                x_len = x_len.to(device)
+
+                # obtain predicted rgb
+                tgt_score = sup_img(tgt_rgb, x_inp, x_len)
+                d1_score = sup_img(d1_rgb, x_inp, x_len)
+                d2_score = sup_img(d2_rgb, x_inp, x_len)
+
+                # loss between actual and predicted rgb: cross entropy
+                loss = F.cross_entropy(torch.cat([tgt_score,d1_score,d2_score], 1), torch.LongTensor(np.zeros(batch_size)).to(device))
+                loss_meter.update(loss.item(), batch_size)  
+
+                pbar.update()
+            pbar.close()
+            if epoch % 10 == 0:
+                print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
+        return loss_meter.avg
+
     print("begin training with supervision level: {} ...".format(args.sup_lvl))
     for i in range(1, args.num_iter + 1):
         print()
@@ -121,21 +130,20 @@ if __name__ == '__main__':
         device = torch.device('cuda' if args.cuda else 'cpu')
 
         # Define training dataset & build vocab
-        train_dataset = WeakSup_ColorDataset(supervision_level=args.sup_lvl, hard=args.hard)
+        train_dataset = WeakSup_ColorReference(supervision_level=args.sup_lvl, hard=args.hard)
         train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
 
         # Define test dataset
-        test_dataset = ColorDataset(vocab=vocab, split='Validation', hard=args.hard)
+        test_dataset = Colors_ReferenceGame(vocab=vocab, split='Validation', hard=args.hard)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
         # Define model
-        sup_img = Supervised(vocab_size)
+        sup_img = ColorSupervised_Paired(vocab_size)
         sup_img = sup_img.to(device)
         optimizer = torch.optim.Adam(sup_img.parameters(), lr=args.lr)
-
         
         best_loss = float('inf')
         track_loss = np.zeros((args.epochs, 2))

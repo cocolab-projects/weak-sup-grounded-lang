@@ -44,7 +44,6 @@ if __name__ == '__main__':
     if not os.path.isdir(args.out_dir):
         os.makedirs(args.out_dir)
 
-
     def test_loss(split='Test'):
         '''
         Test model on newly seen dataset -- gives final test loss
@@ -158,7 +157,7 @@ if __name__ == '__main__':
 
                         total_count += 1
                         correct = False
-                        if p_x_y1 > p_x_y2 and p_x_y1 > p_x_y3:
+                        if p_x_y1 < p_x_y2 and p_x_y1 < p_x_y3:
                             correct_count += 1
                             correct = True
                         if (i % 50 == 0):
@@ -214,12 +213,19 @@ if __name__ == '__main__':
         vae_rgb_dec.eval()
         vae_txt_dec.eval()
 
-        z_y_mu, z_y_logvar = vae_rgb_enc(torch.tensor([[70., 200., 70.], [36, 220, 36], [180, 50, 180]]).to(device))
+        z_y_mu, z_y_logvar = vae_rgb_enc(torch.tensor(
+                                        [[70., 200., 70.],
+                                        [36, 220, 36],
+                                        [180, 50, 180],
+                                        [150, 150, 150],
+                                        [30, 30, 30],
+                                        [190, 30, 30]
+                                        ]).to(device))
         y_mu_z_y = vae_rgb_dec(z_y_mu)
         print(y_mu_z_y * 255.0)
         return
 
-    print("begin testing ...")
+    print("=== begin testing ===")
 
     losses, accuracies = [], []
     for iter_num in range(1, args.num_iter + 1):
@@ -238,9 +244,9 @@ if __name__ == '__main__':
 
         print("... loading complete.")
 
-        # print("performing sanity checks ...")
-        # sanity_check()
-        # print()
+        print("performing sanity checks ...")
+        sanity_check()
+        print()
 
         print()
         print("iteration {} with alpha {} and beta {}".format(iter_num, train_args.alpha, train_args.beta))
