@@ -223,7 +223,7 @@ class Colors_ReferenceGame(data.Dataset):
         self.vocab_size = len(self.vocab['w2i'])
         self.rgb_targets, self.d1_RGBs, self.d2_RGBs, self.texts = \
                 self.concatenate_by_round(self.texts, self.tgt_images, self.d1_images, self.d2_images, self.rounds)
-        self.txt_sources, self.txt_targets, self.max_len = self.process_texts(self.texts)
+        self.txt_sources, self.txt_targets, self.lengths, self.max_len = self.process_texts(self.texts)
 
     def process_texts(self, texts):
         sources, targets, lengths = [], [], []
@@ -235,9 +235,14 @@ class Colors_ReferenceGame(data.Dataset):
             target_tokens = tokens + [EOS_TOKEN]
             assert len(source_tokens) == len(target_tokens)
             length = len(source_tokens)
-            source_tokens.extend([PAD_TOKEN] * (max_len - length))
-            target_tokens.extend([PAD_TOKEN] * (max_len - length))
-            assert len(source_tokens) == 10
+            if length < MAX_LEN:
+                source_tokens.extend([PAD_TOKEN] * (MAX_LEN - length))
+                target_tokens.extend([PAD_TOKEN] * (MAX_LEN - length))
+            else:
+                source_tokens = source_tokens[:MAX_LEN]
+                target_tokens = target_tokens[:MAX_LEN - 1] + [EOS_TOKEN]
+                length = MAX_LEN
+            assert len(source_tokens) == 10, breakpoint()
             assert len(target_tokens) == 10
             source_indices = [self.vocab['w2i'].get(token, self.vocab['w2i'][UNK_TOKEN]) for token in source_tokens]
             target_indices = [self.vocab['w2i'].get(token, self.vocab['w2i'][UNK_TOKEN]) for token in target_tokens]
@@ -249,7 +254,6 @@ class Colors_ReferenceGame(data.Dataset):
         sources = np.array(sources)
         targets = np.array(targets)
         lengths = np.array(lengths)
-
         return sources, targets, lengths, MAX_LEN
 
     def concatenate_by_round(self, texts, tgt_images, d1_images, d2_images, rounds):
@@ -270,7 +274,7 @@ class Colors_ReferenceGame(data.Dataset):
         return rgb_targets, d1_RGBs, d2_RGBs, concat_texts
 
     def __len__(self):
-        return len(self.inputs)
+        return len(self.txt_sources)
 
     def __getitem__(self, index):
         return self.rgb_targets[index], self.d1_RGBs[index], self.d2_RGBs[index], self.txt_sources[index], self.txt_targets[index], self.lengths[index]

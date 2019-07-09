@@ -25,6 +25,39 @@ PAD_TOKEN = '<pad>'
 UNK_TOKEN = '<unk>'
 
 if __name__ == '__main__':
+    # Parse arguments
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('out_dir', type=str, help='where to save checkpoints')
+    parser.add_argument('sup_lvl', type=float, default = 1.0,
+                        help='how much of the data to supervise [default: 1.0]')
+    parser.add_argument('--z_dim', type=int, default=100,
+                        help='number of latent dimension [default = 100]')
+    parser.add_argument('--word_dropout', type=float, default=0.,
+                        help='word dropout in text generation [default = 0.]')
+    parser.add_argument('--batch_size', type=int, default=100,
+                        help='batch size [default=100]')
+    parser.add_argument('--lr', type=float, default=0.001,
+                        help='learning rate [default=0.001]')
+    parser.add_argument('--epochs', type=int, default=50,
+                        help='number of training epochs [default: 50]')
+    parser.add_argument('--alpha', type=float, default=1,
+                        help='lambda argument for text loss')
+    parser.add_argument('--beta', type=float, default=1,
+                        help='lambda argument for rgb loss')
+    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--num_iter', type=int, default = 1,
+                        help='number of iterations for this setting [default: 1]')
+    parser.add_argument('--hard', action='store_true', help='whether the dataset is to include all data')
+    parser.add_argument('--cuda', action='store_true', help='Enable cuda')
+    args = parser.parse_args()
+
+    if not os.path.isdir(args.out_dir):
+        os.makedirs(args.out_dir)
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+
     def train(epoch):
         vae_emb.train()
         vae_rgb_enc.train()
@@ -43,9 +76,9 @@ if __name__ == '__main__':
             x_len = x_len.to(device)
 
             # Encode to |z|
-            z_x_mu, z_x_logvar = vae_txt_enc(x_tgt, x_len)
+            z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
             z_y_mu, z_y_logvar = vae_rgb_enc(y_rgb)
-            z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_tgt, x_len)
+            z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_src, x_len)
 
             # sample via reparametrization
             z_sample_x = reparameterize(z_x_mu, z_x_logvar)
@@ -55,8 +88,8 @@ if __name__ == '__main__':
             # "predictions"
             y_mu_z_y = vae_rgb_dec(z_sample_y)
             y_mu_z_xy = vae_rgb_dec(z_sample_xy)
-            x_logit_z_x = vae_txt_dec(z_sample_x, x_tgt, x_len)
-            x_logit_z_xy = vae_txt_dec(z_sample_xy, x_tgt, x_len)
+            x_logit_z_x = vae_txt_dec(z_sample_x, x_src, x_len)
+            x_logit_z_xy = vae_txt_dec(z_sample_xy, x_src, x_len)
 
             out = {'z_x_mu': z_x_mu, 'z_x_logvar': z_x_logvar,
                     'z_y_mu': z_y_mu, 'z_y_logvar': z_y_logvar,
@@ -66,7 +99,7 @@ if __name__ == '__main__':
                     'y': y_rgb, 'x': x_tgt, 'pad_index': pad_index}
 
             # compute loss
-            loss = loss_multimodal(out, batch_size)
+            loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta)
 
             loss_meter.update(loss.item(), batch_size)
             optimizer.zero_grad()
@@ -103,9 +136,9 @@ if __name__ == '__main__':
                 x_len = x_len.to(device)
 
                 # Encode to |z|
-                z_x_mu, z_x_logvar = vae_txt_enc(x_tgt, x_len)
+                z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
                 z_y_mu, z_y_logvar = vae_rgb_enc(y_rgb)
-                z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_tgt, x_len)
+                z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_src, x_len)
 
                 # sample via reparametrization
                 z_sample_x = reparameterize(z_x_mu, z_x_logvar)
@@ -115,8 +148,8 @@ if __name__ == '__main__':
                 # "predictions"
                 y_mu_z_y = vae_rgb_dec(z_sample_y)
                 y_mu_z_xy = vae_rgb_dec(z_sample_xy)
-                x_logit_z_x = vae_txt_dec(z_sample_x, x_tgt, x_len)
-                x_logit_z_xy = vae_txt_dec(z_sample_xy, x_tgt, x_len)
+                x_logit_z_x = vae_txt_dec(z_sample_x, x_src, x_len)
+                x_logit_z_xy = vae_txt_dec(z_sample_xy, x_src, x_len)
 
                 out = {'z_x_mu': z_x_mu, 'z_x_logvar': z_x_logvar,
                         'z_y_mu': z_y_mu, 'z_y_logvar': z_y_logvar,
@@ -126,7 +159,7 @@ if __name__ == '__main__':
                         'y': y_rgb, 'x': x_tgt, 'pad_index': pad_index}
 
                 # compute loss
-                loss = loss_multimodal(out, batch_size)
+                loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta)
                 loss_meter.update(loss.item(), batch_size)
 
                 pbar.update()
@@ -134,35 +167,6 @@ if __name__ == '__main__':
             if epoch % 10 == 0:
                 print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
         return loss_meter.avg
-
-    # Parse arguments
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('out_dir', type=str, help='where to save checkpoints')
-    parser.add_argument('sup_lvl', type=float, default = 1.0,
-                        help='how much of the data to supervise [default: 1.0]')
-    parser.add_argument('--z_dim', type=int, default=100,
-                        help='number of latent dimension [default = 100]')
-    parser.add_argument('--word_dropout', type=float, default=0.,
-                        help='word dropout in text generation [default = 0.]')
-    parser.add_argument('--batch_size', type=int, default=100,
-                        help='batch size [default=100]')
-    parser.add_argument('--lr', type=float, default=0.001,
-                        help='learning rate [default=0.001]')
-    parser.add_argument('--epochs', type=int, default=50,
-                        help='number of training epochs [default: 50]')
-    parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--num_iter', type=int, default = 1,
-                        help='number of iterations for this setting [default: 1]')
-    parser.add_argument('--hard', action='store_true', help='whether the dataset is to include all data')
-    parser.add_argument('--cuda', action='store_true', help='Enable cuda')
-    args = parser.parse_args()
-
-    if not os.path.isdir(args.out_dir):
-        os.makedirs(args.out_dir)
-
-    random.seed(args.seed)
-    np.random.seed(args.seed)
 
     print("begin training with supervision level: {} ...".format(args.sup_lvl))
     for i in range(1, args.num_iter + 1):
