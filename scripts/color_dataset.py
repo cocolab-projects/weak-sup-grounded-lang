@@ -171,8 +171,6 @@ class WeakSup_ColorDataset(ColorDataset):
 
 class Colors_ReferenceGame(data.Dataset):
     def __init__(self, vocab, split='Test', hard=False):
-        assert vocab is not None
-
         with open(os.path.join(RAW_DIR, 'filteredCorpus.csv')) as fp:
             df = pd.read_csv(fp)
         # Only pick out data with true outcomes, far(=easy) conditions, and speaker text
@@ -204,7 +202,6 @@ class Colors_ReferenceGame(data.Dataset):
             self.d1_images = self.d1_imagesList[:train_len]
             self.d2_images = self.d2_imagesList[:train_len]
         elif split == 'Validation':
-            training_length
             self.texts = self.textsList[train_len:-test_len]
             self.rounds = self.roundsList[train_len:-test_len]
             self.tgt_images = self.tgt_imagesList[train_len:-test_len]
@@ -216,14 +213,49 @@ class Colors_ReferenceGame(data.Dataset):
             self.tgt_images = self.tgt_imagesList[-test_len:]
             self.d1_images = self.d1_imagesList[-test_len:]
             self.d2_images = self.d2_imagesList[-test_len:]
+        
         if vocab is None:
             self.vocab = self.build_vocab(self.texts)
         else:
             self.vocab = vocab
+
         self.vocab_size = len(self.vocab['w2i'])
         self.rgb_targets, self.d1_RGBs, self.d2_RGBs, self.texts = \
                 self.concatenate_by_round(self.texts, self.tgt_images, self.d1_images, self.d2_images, self.rounds)
         self.txt_sources, self.txt_targets, self.lengths, self.max_len = self.process_texts(self.texts)
+        
+        self.rgb_targets = np.array(self.rgb_targets)
+        self.d1_RGBs = np.array(self.d1_RGBs)
+        self.d2_RGBs = np.array(self.d2_RGBs)
+
+    def build_vocab(self, texts):
+        print("building vocab ...")
+        w2c = defaultdict(int)
+        i2w, w2i = {}, {}
+        for text in texts:
+            tokens = preprocess_text(text)
+            for token in tokens:
+                w2c[token] += 1
+        indexCount = 0
+        for token in w2c.keys():
+            if w2c[token] >= MIN_USED:
+                w2i[token] = indexCount
+                i2w[indexCount] = token
+                indexCount += 1
+        w2i[SOS_TOKEN] = indexCount
+        w2i[EOS_TOKEN] = indexCount+1
+        w2i[UNK_TOKEN] = indexCount+2
+        w2i[PAD_TOKEN] = indexCount+3
+        i2w[indexCount] = SOS_TOKEN
+        i2w[indexCount+1] = EOS_TOKEN
+        i2w[indexCount+2] = UNK_TOKEN
+        i2w[indexCount+3] = PAD_TOKEN
+
+        vocab = {'i2w': i2w, 'w2i': w2i}
+        print("==> total number of tokens: %d" % len(w2c.keys()))
+        print("==> total number of tokens used at least twice (vocab_size): %d" % len(w2i))
+        print("... vocab building done.")
+        return vocab
 
     def process_texts(self, texts):
         sources, targets, lengths = [], [], []
@@ -278,4 +310,19 @@ class Colors_ReferenceGame(data.Dataset):
 
     def __getitem__(self, index):
         return self.rgb_targets[index], self.d1_RGBs[index], self.d2_RGBs[index], self.txt_sources[index], self.txt_targets[index], self.lengths[index]
+
+class WeakSup_ColorReference(Colors_ReferenceGame):
+    def __init__(self, vocab=None, supervision_level=1.0, hard=False):
+        super(WeakSup_ColorReference, self).__init__(vocab=vocab, split='Train', hard=hard)
+        
+        self.random_state = np.random.RandomState(18192)
+        n = len(self.txt_sources)
+        supervision = self.random_state.binomial(1, supervision_level, size=n)
+        supervision = supervision.astype(np.bool)
+        self.txt_sources = self.txt_sources[supervision]
+        self.txt_targets = self.txt_targets[supervision]
+        self.rgb_targets = self.rgb_targets[supervision]
+        self.d1_RGBs = self.d1_RGBs[supervision]
+        self.d2_RGBs = self.d2_RGBs[supervision]
+        self.lengths = self.lengths[supervision]
 

@@ -9,7 +9,7 @@ from torch.distributions.normal import Normal
 
 from utils import (AverageMeter, score_txt_logits, reparameterize,
                     loss_multimodal, log_mean_exp, gaussian_log_pdf, isotropic_gaussian_log_pdf,
-                    bernoulli_log_pdf, get_text)
+                    bernoulli_log_pdf, get_text, get_image_text_joint_nll)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
                     ColorEncoder, MultimodalEncoder, ColorDecoder)
 from color_dataset import (ColorDataset, Colors_ReferenceGame)
@@ -43,7 +43,6 @@ if __name__ == '__main__':
 
     if not os.path.isdir(args.out_dir):
         os.makedirs(args.out_dir)
-
 
     def test_loss(split='Test'):
         '''
@@ -95,11 +94,7 @@ if __name__ == '__main__':
                         'y': y_rgb, 'x': x_tgt, 'pad_index': pad_index}
 
                 # compute loss
-                loss = loss_multimodal(out, batch_size)
-                loss_meter.update(loss.item(), batch_size)
-
-                # compute loss
-                loss = loss_multimodal(out, batch_size)
+                loss = loss_multimodal(out, batch_size, alpha=train_args.alpha, beta=train_args.beta)
                 loss_meter.update(loss.item(), batch_size)
 
             print('====> Final Test Loss: {:.4f}'.format(loss_meter.avg))
@@ -146,6 +141,9 @@ if __name__ == '__main__':
                     for i in range(batch_size):
                         z_samples = torch.randn(N_SAMPLE, train_args.z_dim).to(device) * torch.exp(0.5 * z_xy_logvar[i]) + z_xy_mu[i]
                         y_mu_list = vae_rgb_dec(z_samples)
+                        # print(get_text(vocab['i2w'], x_tgt[i], x_len[i]))
+                        # print(y_mu_list[0] * 255.)
+
                         x_tgt_logits_list = vae_txt_dec(z_samples, x_src[i].unsqueeze(0).repeat(N_SAMPLE, 1),
                                                                     x_len[i].unsqueeze(0).repeat(N_SAMPLE))
                         elt_max_len = x_tgt_logits_list.size(1)
@@ -159,13 +157,14 @@ if __name__ == '__main__':
 
                         total_count += 1
                         correct = False
-                        if p_x_y1 > p_x_y2 and p_x_y1 > p_x_y3:
+                        if p_x_y1 < p_x_y2 and p_x_y1 < p_x_y3:
                             correct_count += 1
                             correct = True
-                        if (i % 20 == 0):
+                        if (i % 50 == 0):
                             match_text = get_text(vocab['i2w'], x_tgt_i, x_len_i)
                             print("color: {} <===> target text: {} <====> {}".format(y_rgb[i] * 255.0, match_text, x_tgt_i))
-                            print("correct? {} ======> p(x,y1): {} p(x,y2): {} p(x,y3): {}".format('T' if correct else 'F', p_x_y1, p_x_y2, p_x_y3))
+                            print("mean color prediction: {} with std {}".format(torch.mean(y_mu_list, dim=0), torch.std(y_mu_list, dim=0)))
+                            print("correct? {} ======> p(x,y1): {:4f} p(x,y2): {:4f} p(x,y3): {:4f}".format('T' if correct else 'F', p_x_y1, p_x_y2, p_x_y3))
                             print()
                     pbar.update()
 
@@ -173,27 +172,6 @@ if __name__ == '__main__':
             print('====> Final Accuracy: {}/{} = {}%'.format(correct_count, total_count, accuracy))
             print()
         return accuracy
-
-    def get_image_text_joint_nll(y, y_mu_list, x_tgt, x_tgt_logits_list, z_list, z_mu, z_logvar, pad_index):
-        batch_size = y.size(0)    
-        N = len(x_tgt_logits_list)
-        log_p_xy_list = []
-
-        y, x_tgt = y.unsqueeze(0).repeat(N, 1), x_tgt.unsqueeze(0).repeat(N, 1)
-        z_mu, z_logvar = z_mu.unsqueeze(0).repeat(N, 1), z_logvar.unsqueeze(0).repeat(N, 1)
-
-        log_p_x_given_z = score_txt_logits(x_tgt, x_tgt_logits_list, pad_index)
-        log_p_y_given_z = bernoulli_log_pdf(y.float(), y_mu_list)
-        log_q_z_given_y = torch.sum(gaussian_log_pdf(z_list, z_mu, z_logvar), dim=1)
-        log_p_z = torch.sum(isotropic_gaussian_log_pdf(z_list), dim=1)
-        log_p_xy = log_p_x_given_z + log_p_y_given_z + log_p_z - log_q_z_given_y
-        log_p_xy = log_p_xy.cpu()  # cast to CPU so we dont blow up
-
-        nll = log_mean_exp(log_p_xy.unsqueeze(0), dim=1)
-        nll = -torch.mean(nll)
-
-        return nll
-
 
     def load_checkpoint(folder='./', filename='model_best'):
         checkpoint = torch.load(folder + filename + '.pth.tar')
@@ -217,7 +195,7 @@ if __name__ == '__main__':
         vae_mult_enc = MultimodalEncoder(vae_emb, args.z_dim)
         vae_rgb_dec = ColorDecoder(args.z_dim)
         vae_txt_dec = TextDecoder(vae_emb, args.z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
-                                    w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.word_dropout)
+                                    w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
         vae_emb.load_state_dict(vae_emb_sd)
         vae_rgb_enc.load_state_dict(vae_rgb_enc_sd)
         vae_txt_enc.load_state_dict(vae_txt_enc_sd)
@@ -235,15 +213,24 @@ if __name__ == '__main__':
         vae_rgb_dec.eval()
         vae_txt_dec.eval()
 
-        z_y_mu, z_y_logvar = vae_rgb_enc(torch.tensor([[70., 200., 70.], [36, 220, 36], [180, 50, 180]]))
+        z_y_mu, z_y_logvar = vae_rgb_enc(torch.tensor(
+                                        [[70., 200., 70.],
+                                        [36, 220, 36],
+                                        [180, 50, 180],
+                                        [150, 150, 150],
+                                        [30, 30, 30],
+                                        [190, 30, 30]
+                                        ]).to(device))
         y_mu_z_y = vae_rgb_dec(z_y_mu)
         print(y_mu_z_y * 255.0)
         return
 
-    print("begin testing ...")
+    print("=== begin testing ===")
 
     losses, accuracies = [], []
     for iter_num in range(1, args.num_iter + 1):
+
+        print("loading checkpoint files ...")
         epoch, train_args, vae_emb, vae_rgb_enc, vae_txt_enc, vae_mult_enc, vae_rgb_dec, vae_txt_dec, vocab, vocab_size, pad_index = \
             load_checkpoint(folder=args.load_dir,
                             filename='checkpoint_{}_{}_best'.format(args.sup_lvl, iter_num))
@@ -255,21 +242,24 @@ if __name__ == '__main__':
         vae_rgb_dec.to(device)
         vae_txt_dec.to(device)
 
+        print("... loading complete.")
+
         print("performing sanity checks ...")
         sanity_check()
         print()
 
-    #     print("iteration {}".format(iter_num))
-    #     print("best training epoch: {}".format(epoch))
+        print()
+        print("iteration {} with alpha {} and beta {}".format(iter_num, train_args.alpha, train_args.beta))
+        print("best training epoch: {}".format(epoch))
 
-    #     losses.append(test_loss())
-    #     accuracies.append(test_refgame_accuracy())
+        losses.append(test_loss())
+        accuracies.append(test_refgame_accuracy())
 
-    # losses = np.array(losses)
-    # accuracies = np.array(accuracies)
-    # np.save(os.path.join(args.out_dir, 'accuracies_{}.npy'.format(args.sup_lvl)), accuracies)
-    # # np.save(os.path.join(args.out_dir, 'final_losses_{}.npy'.format(args.sup_lvl)), losses)
+    losses = np.array(losses)
+    accuracies = np.array(accuracies)
+    np.save(os.path.join(args.out_dir, 'accuracies_{}.npy'.format(args.sup_lvl)), accuracies)
+    # np.save(os.path.join(args.out_dir, 'final_losses_{}.npy'.format(args.sup_lvl)), losses)
 
-    # print()
-    # print("======> Average loss: {}".format(np.mean(losses)))
-    # print("======> Average accuracy: {}".format(np.mean(accuracies)))
+    print()
+    print("======> Average loss: {:6f}".format(np.mean(losses)))
+    print("======> Average accuracy: {:4f}".format(np.mean(accuracies)))
