@@ -3,7 +3,12 @@ from __future__ import print_function
 import os
 import sys
 import numpy as np
-import torch
+import torch 
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+from torch.distributions.normal import Normal
+
 import shutil
 from tqdm import tqdm
 from itertools import chain
@@ -40,8 +45,8 @@ def get_text(i2w, input, length):
   """ Returns the actual sentence
   """
   text = ""
-  for j in range(1,length - 1):
-    text += " " + i2w[input[j]]
+  for j in range(length):
+    text += " " + i2w[input[j].item()]
   return text
 
 
@@ -86,36 +91,79 @@ def reparameterize(mu, logvar):
     epsilon = np.random.randn()
     return torch.exp(0.5 * logvar) * epsilon + mu
 
-def score_txt_logits
+def log_mean_exp(x, dim=1):
+    r"""log(1/k * sum(exp(x))): this normalizes x.
+    @param x: PyTorch.Tensor
+              samples from gaussian
+    @param dim: integer (default: 1)
+                which dimension to take the mean over
+    @return: PyTorch.Tensor
+             mean of x
+    """
+    m = torch.max(x, dim=dim, keepdim=True)[0]
+    return m + torch.log(torch.mean(torch.exp(x - m),
+                         dim=dim, keepdim=True))
 
-def loss_multimodal(out, batch_size):
-    log_p_x_given_z = -score_txt_logits(out['x'].view(batch_size, -1), out['x_logit_z_x'].view(batch_size, -1))
+def score_txt_logits(text_seq, text_logits, ignore_index):
+    n, s, v = text_logits.size()
+    text_logits_2d = text_logits.contiguous().view(n * s, v)
+    text_seq_2d = text_seq[:, :s].contiguous().view(n * s)
+    loss = -F.cross_entropy(text_logits_2d, text_seq_2d, 
+                            ignore_index=ignore_index, reduction='none')
+    loss = loss.view(n, s)
+    loss = torch.sum(loss, dim=1)
+
+    return loss
+
+def loss_multimodal(out, batch_size, alpha=1, beta=1):
+    log_p_x_given_z_x = -score_txt_logits(out['x'], out['x_logit_z_x'], out['pad_index'])
     kl_q_z_given_x_and_p_z = -0.5 * (1 + out['z_x_logvar'] - out['z_x_mu'].pow(2) - out['z_x_logvar'].exp())
     kl_q_z_given_x_and_p_z = torch.sum(kl_q_z_given_x_and_p_z, dim=1)
-    elbo_x = self.config.loss_params.lambda_x * log_p_x_given_z + kl_q_z_given_x_and_p_z
+    elbo_x = alpha * log_p_x_given_z_x + kl_q_z_given_x_and_p_z
     elbo_x = torch.mean(elbo_x)
 
-    log_p_y_given_z = -torch.mean(torch.pow(out['y'] - out['y_mu_z_y'], 2))
+    log_p_y_given_z_y = -bernoulli_log_pdf(out['y'], out['y_mu_z_y'])
     kl_q_z_given_y_and_p_z = -0.5 * (1 + out['z_y_logvar'] - out['z_y_mu'].pow(2) - out['z_y_logvar'].exp())
     kl_q_z_given_y_and_p_z = torch.sum(kl_q_z_given_y_and_p_z, dim=1)
-    elbo_y = self.config.loss_params.lambda_y * log_p_y_given_z + kl_q_z_given_y_and_p_z
+    elbo_y = beta * log_p_y_given_z_y + kl_q_z_given_y_and_p_z
     elbo_y = torch.mean(elbo_y)
 
-    log_p_x_given_z = -score_txt_logits(out['x'].view(batch_size, -1), out['x_logit_z_xy'].view(batch_size, -1))
+    log_p_x_given_z_xy = -score_txt_logits(out['x'], out['x_logit_z_xy'], out['pad_index'])
     kl_q_z_given_xy_q_z_given_y = _kl_normal_normal(out['z_xy_mu'], out['z_y_mu'], out['z_xy_logvar'], out['z_y_logvar'])
     kl_q_z_given_xy_q_z_given_y = torch.sum(kl_q_z_given_xy_q_z_given_y, dim=1)
-    elbo_x_given_y = self.config.loss_params.lambda_x * log_p_x_given_z + kl_q_z_given_xy_q_z_given_y
+    elbo_x_given_y = alpha * log_p_x_given_z_xy + kl_q_z_given_xy_q_z_given_y
     elbo_x_given_y = torch.mean(elbo_x_given_y)
 
-    log_p_y_given_z = -torch.mean(torch.pow(out['y'] - out['y_mu_z_xy'], 2))
+    log_p_y_given_z_xy = -bernoulli_log_pdf(out['y'], out['y_mu_z_xy'])
     kl_q_z_given_xy_q_z_given_x = _kl_normal_normal(out['z_xy_mu'], out['z_x_mu'], out['z_xy_logvar'], out['z_x_logvar'])
     kl_q_z_given_xy_q_z_given_x = torch.sum(kl_q_z_given_xy_q_z_given_x, dim=1)
-    elbo_y_given_x = self.config.loss_params.lambda_y * log_p_y_given_z + kl_q_z_given_xy_q_z_given_x
+    elbo_y_given_x = beta * log_p_y_given_z_xy + kl_q_z_given_xy_q_z_given_x
     elbo_y_given_x = torch.mean(elbo_y_given_x)
 
     loss = elbo_x + elbo_y + elbo_x_given_y + elbo_y_given_x
     return loss
 
+# def _kl_normal_normal(p_mu, q_mu, p_logvar, q_logvar):
+#     p_scale = torch.exp(0.5 * p_logvar)
+#     q_scale = torch.exp(0.5 * q_logvar)
+#     var_ratio = (p_scale / q_scale).pow(2)
+#     t1 = ((p_mu - q_mu) / q_scale).pow(2)
+#     return 0.5 * (var_ratio + t1 - 1 - var_ratio.log())
+
+def bernoulli_log_pdf(x, mu):
+    mu = torch.clamp(mu, 1e-7, 1.-1e-7)
+    return torch.sum(x * torch.log(mu) + (1. - x) * torch.log(1. - mu), dim=1)
+
+def gaussian_log_pdf(x, mu, logvar):
+    sigma = torch.exp(0.5 * logvar)
+    dist = Normal(mu, sigma)
+    return dist.log_prob(x)
+
+
+def isotropic_gaussian_log_pdf(x):
+    mu = torch.zeros_like(x)
+    logvar = torch.zeros_like(x)
+    return gaussian_log_pdf(x, mu, logvar)
 
 def preprocess_text(text):
     text = text.lower() 

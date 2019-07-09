@@ -1,16 +1,51 @@
 import os
 import sys
 import numpy as np
+from tqdm import tqdm
 
 import torch 
 from torch.utils.data import DataLoader
-from utils import (AverageMeter)
+from torch.distributions.normal import Normal
+
+from utils import (AverageMeter, score_txt_logits, reparameterize,
+                    loss_multimodal, log_mean_exp, gaussian_log_pdf, isotropic_gaussian_log_pdf,
+                    bernoulli_log_pdf, get_text)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
                     ColorEncoder, MultimodalEncoder, ColorDecoder)
 from color_dataset import (ColorDataset, Colors_ReferenceGame)
 
+SOS_TOKEN = '<sos>'
+EOS_TOKEN = '<eos>'
+PAD_TOKEN = '<pad>'
+UNK_TOKEN = '<unk>'
+
+N_SAMPLE = 80
+
 if __name__ == '__main__':
-    def test_loss(vocab, split='Test'):
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('load_dir', type=str, help='where to load checkpoints from')
+    parser.add_argument('out_dir', type=str, help='where to store results from')
+    parser.add_argument('--sup_lvl', type=float, help='supervision level, if any')
+    parser.add_argument('--num_iter', type=int, default=1,
+                        help='number of total iterations performed on each setting [default: 1]')
+    parser.add_argument('--hard', action='store_true', help='whether the dataset is to be easy')
+    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--cuda', action='store_true', help='Enable cuda')
+    args = parser.parse_args()
+
+    # set learning device
+    args.cuda = args.cuda and torch.cuda.is_available()
+    device = torch.device('cuda' if args.cuda else 'cpu')
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
+    if not os.path.isdir(args.out_dir):
+        os.makedirs(args.out_dir)
+
+
+    def test_loss(split='Test'):
         '''
         Test model on newly seen dataset -- gives final test loss
         '''
@@ -20,11 +55,16 @@ if __name__ == '__main__':
         test_dataset = ColorDataset(vocab=vocab, split=split, hard=args.hard)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
 
-        model.eval()
+        vae_emb.eval()
+        vae_rgb_enc.eval()
+        vae_txt_enc.eval()
+        vae_mult_enc.eval()
+        vae_rgb_dec.eval()
+        vae_txt_dec.eval()
+
         with torch.no_grad():
             loss_meter = AverageMeter()
-
-            for batch_idx, (y_rgb, x_inp, x_len) in enumerate(test_loader):
+            for batch_idx, (y_rgb, x_src, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_src.size(0) 
                 y_rgb = y_rgb.to(device).float()
                 x_src = x_src.to(device)
@@ -32,48 +72,54 @@ if __name__ == '__main__':
                 x_len = x_len.to(device)
 
                 # Encode to |z|
-                z_x_mu, z_x_logvar = vae_txt_enc(x_tgt, x_len)
+                z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
                 z_y_mu, z_y_logvar = vae_rgb_enc(y_rgb)
-                z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_tgt, x_len)
+                z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_src, x_len)
 
                 # sample via reparametrization
-                z_sample_x = reparametrize(z_x_mu, z_x_logvar)
-                z_sample_y = reparametrize(z_y_mu, z_y_logvar)
-                z_sample_xy = reparametrize(z_xy_mu, z_xy_logvar)
+                z_sample_x = reparameterize(z_x_mu, z_x_logvar)
+                z_sample_y = reparameterize(z_y_mu, z_y_logvar)
+                z_sample_xy = reparameterize(z_xy_mu, z_xy_logvar)
 
                 # "predictions"
                 y_mu_z_y = vae_rgb_dec(z_sample_y)
                 y_mu_z_xy = vae_rgb_dec(z_sample_xy)
-                x_logit_z_x = vae_txt_dec(z_sample_x, x_tgt, x_len)
-                x_logit_z_xy = vae_txt_dec(z_sample_xy, x_tgt, x_len)
+                x_logit_z_x = vae_txt_dec(z_sample_x, x_src, x_len)
+                x_logit_z_xy = vae_txt_dec(z_sample_xy, x_src, x_len)
 
                 out = {'z_x_mu': z_x_mu, 'z_x_logvar': z_x_logvar,
                         'z_y_mu': z_y_mu, 'z_y_logvar': z_y_logvar,
                         'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
                         'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
                         'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                        'y': y_rgb, 'x_tgt': x_tgt}
+                        'y': y_rgb, 'x': x_tgt, 'pad_index': pad_index}
 
                 # compute loss
                 loss = loss_multimodal(out, batch_size)
                 loss_meter.update(loss.item(), batch_size)
 
-                pbar.update()
-            pbar.close()
+                # compute loss
+                loss = loss_multimodal(out, batch_size)
+                loss_meter.update(loss.item(), batch_size)
+
             print('====> Final Test Loss: {:.4f}'.format(loss_meter.avg))
         return loss_meter.avg
 
-    def test_refgame_accuracy(model, vocab):
+    def test_refgame_accuracy():
         '''
         Final accuracy: test on reference game dataset
         '''
-        assert vocab != None
         print("Computing final accuracy for reference game settings...")
 
         ref_dataset = Colors_ReferenceGame(vocab, split='Test', hard=args.hard)
         ref_loader = DataLoader(ref_dataset, shuffle=False, batch_size=100)
 
-        model.eval()
+        vae_emb.eval()
+        vae_rgb_enc.eval()
+        vae_txt_enc.eval()
+        vae_mult_enc.eval()
+        vae_rgb_dec.eval()
+        vae_txt_dec.eval()
 
         with torch.no_grad():
             loss_meter = AverageMeter()
@@ -81,46 +127,73 @@ if __name__ == '__main__':
             total_count = 0
             correct_count = 0
 
-            for batch_idx, (tgt_rgb, d1_rgb, d2_rgb, x_inp, x_len) in enumerate(ref_loader):
-                batch_size = x_src.size(0) 
-                y_rgb = y_rgb.to(device).float()
-                x_src = x_src.to(device)
-                x_tgt = x_tgt.to(device)
-                x_len = x_len.to(device)
+            with tqdm(total=len(ref_loader)) as pbar:
+                for batch_idx, (y_rgb, d1_rgb, d2_rgb, x_src, x_tgt, x_len) in enumerate(ref_loader):
+                    batch_size = x_src.size(0) 
+                    y_rgb = y_rgb.to(device).float()
+                    d1_rgb = d1_rgb.to(device).float()
+                    d2_rgb = d2_rgb.to(device).float()
+                    x_src = x_src.to(device)
+                    x_tgt = x_tgt.to(device)
+                    x_len = x_len.to(device)
 
-                # Encode to |z|
-                z_x_mu, z_x_logvar = vae_txt_enc(x_tgt, x_len)
-                z_y_mu, z_y_logvar = vae_rgb_enc(y_rgb)
-                z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_tgt, x_len)
+                    # Encode to |z|
+                    z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
+                    z_y_mu, z_y_logvar = vae_rgb_enc(y_rgb)
+                    z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_src, x_len)
 
-                # sample via reparametrization
-                z_sample_x = reparametrize(z_x_mu, z_x_logvar)
-                z_sample_y = reparametrize(z_y_mu, z_y_logvar)
-                z_sample_xy = reparametrize(z_xy_mu, z_xy_logvar)
+                    # sample and obtain expected value
+                    for i in range(batch_size):
+                        z_samples = torch.randn(N_SAMPLE, train_args.z_dim).to(device) * torch.exp(0.5 * z_xy_logvar[i]) + z_xy_mu[i]
+                        y_mu_list = vae_rgb_dec(z_samples)
+                        x_tgt_logits_list = vae_txt_dec(z_samples, x_src[i].unsqueeze(0).repeat(N_SAMPLE, 1),
+                                                                    x_len[i].unsqueeze(0).repeat(N_SAMPLE))
+                        elt_max_len = x_tgt_logits_list.size(1)
+                        x_tgt_i = x_tgt[i, : elt_max_len]
+                        x_len_i = elt_max_len
 
-                # "predictions"
-                y_mu_z_y = vae_rgb_dec(z_sample_y)
-                y_mu_z_xy = vae_rgb_dec(z_sample_xy)
+                        # "predictions"
+                        p_x_y1 = get_image_text_joint_nll(y_rgb[i], y_mu_list, x_tgt_i, x_tgt_logits_list, z_samples, z_xy_mu[i], z_xy_logvar[i], pad_index)
+                        p_x_y2 = get_image_text_joint_nll(d1_rgb[i], y_mu_list, x_tgt_i, x_tgt_logits_list, z_samples, z_xy_mu[i], z_xy_logvar[i], pad_index)
+                        p_x_y3 = get_image_text_joint_nll(d2_rgb[i], y_mu_list, x_tgt_i, x_tgt_logits_list, z_samples, z_xy_mu[i], z_xy_logvar[i], pad_index)
 
-                # compute loss
-                loss = loss_multimodal(out, batch_size)
-                loss_meter.update(loss.item(), batch_size)
-
-                for i in range(batch_size):
-                    diff_tgt = torch.mean(torch.pow(pred_rgb[i] - tgt_rgb[i], 2))
-                    diff_d1 = torch.mean(torch.pow(pred_rgb[i] - d1_rgb[i], 2))
-                    diff_d2 = torch.mean(torch.pow(pred_rgb[i] - d2_rgb[i], 2))
-                    total_count += 1
-                    if diff_tgt.item() < diff_d1.item() and diff_tgt.item() < diff_d2.item():
-                        correct_count += 1
-
-                loss_meter.update(loss.item(), batch_size)
+                        total_count += 1
+                        correct = False
+                        if p_x_y1 > p_x_y2 and p_x_y1 > p_x_y3:
+                            correct_count += 1
+                            correct = True
+                        if (i % 20 == 0):
+                            match_text = get_text(vocab['i2w'], x_tgt_i, x_len_i)
+                            print("color: {} <===> target text: {} <====> {}".format(y_rgb[i] * 255.0, match_text, x_tgt_i))
+                            print("correct? {} ======> p(x,y1): {} p(x,y2): {} p(x,y3): {}".format('T' if correct else 'F', p_x_y1, p_x_y2, p_x_y3))
+                            print()
+                    pbar.update()
 
             accuracy = correct_count / float(total_count) * 100
-            print('====> Final Test Loss: {:.4f}'.format(loss_meter.avg))
             print('====> Final Accuracy: {}/{} = {}%'.format(correct_count, total_count, accuracy))
             print()
         return accuracy
+
+    def get_image_text_joint_nll(y, y_mu_list, x_tgt, x_tgt_logits_list, z_list, z_mu, z_logvar, pad_index):
+        batch_size = y.size(0)    
+        N = len(x_tgt_logits_list)
+        log_p_xy_list = []
+
+        y, x_tgt = y.unsqueeze(0).repeat(N, 1), x_tgt.unsqueeze(0).repeat(N, 1)
+        z_mu, z_logvar = z_mu.unsqueeze(0).repeat(N, 1), z_logvar.unsqueeze(0).repeat(N, 1)
+
+        log_p_x_given_z = score_txt_logits(x_tgt, x_tgt_logits_list, pad_index)
+        log_p_y_given_z = bernoulli_log_pdf(y.float(), y_mu_list)
+        log_q_z_given_y = torch.sum(gaussian_log_pdf(z_list, z_mu, z_logvar), dim=1)
+        log_p_z = torch.sum(isotropic_gaussian_log_pdf(z_list), dim=1)
+        log_p_xy = log_p_x_given_z + log_p_y_given_z + log_p_z - log_q_z_given_y
+        log_p_xy = log_p_xy.cpu()  # cast to CPU so we dont blow up
+
+        nll = log_mean_exp(log_p_xy.unsqueeze(0), dim=1)
+        nll = -torch.mean(nll)
+
+        return nll
+
 
     def load_checkpoint(folder='./', filename='model_best'):
         checkpoint = torch.load(folder + filename + '.pth.tar')
@@ -132,9 +205,11 @@ if __name__ == '__main__':
         vae_rgb_dec_sd = checkpoint['vae_rgb_dec']
         vae_txt_dec_sd = checkpoint['vae_txt_dec']
         vocab = checkpoint['vocab']
-        w2i = vocab['w2i']
         vocab_size = checkpoint['vocab_size']
         args = checkpoint['cmd_line_args']
+
+        w2i = vocab['w2i']
+        pad_index = w2i[PAD_TOKEN]
 
         vae_emb = TextEmbedding(vocab_size)
         vae_rgb_enc = ColorEncoder(args.z_dim)
@@ -150,41 +225,51 @@ if __name__ == '__main__':
         vae_rgb_dec.load_state_dict(vae_rgb_dec_sd)
         vae_txt_dec.load_state_dict(vae_txt_dec_sd)
 
-        return epoch, args, vae_emb, vae_rgb_enc, vae_txt_enc, vae_mult_enc, vae_rgb_dec, vae_txt_dec, vocab, vocab_size
+        return epoch, args, vae_emb, vae_rgb_enc, vae_txt_enc, vae_mult_enc, vae_rgb_dec, vae_txt_dec, vocab, vocab_size, pad_index
 
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('load_dir', type=str, help='where to load checkpoints from')
-    parser.add_argument('out_dir', type=str, help='where to store results from')
-    parser.add_argument('--sup_lvl', type=float, help='supervision level, if any')
-    parser.add_argument('--num_iter', type=int, default=1,
-                        help='number of total iterations performed on each setting [default: 1]')
-    parser.add_argument('--hard', action='store_true', help='whether the dataset is to be easy')
-    parser.add_argument('--seed', type=int, default=42)
-    args = parser.parse_args()
+    def sanity_check(split='Test'):
+        vae_emb.eval()
+        vae_rgb_enc.eval()
+        vae_txt_enc.eval()
+        vae_mult_enc.eval()
+        vae_rgb_dec.eval()
+        vae_txt_dec.eval()
 
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+        z_y_mu, z_y_logvar = vae_rgb_enc(torch.tensor([[70., 200., 70.], [36, 220, 36], [180, 50, 180]]))
+        y_mu_z_y = vae_rgb_dec(z_y_mu)
+        print(y_mu_z_y * 255.0)
+        return
 
-    if not os.path.isdir(args.out_dir):
-        os.makedirs(args.out_dir)
+    print("begin testing ...")
 
     losses, accuracies = [], []
     for iter_num in range(1, args.num_iter + 1):
-        epoch, vae_emb, vae_rgb_enc, vae_txt_enc, vae_mult_enc, vae_rgb_dec, vae_txt_dec, vocab, vocab_size = \
+        epoch, train_args, vae_emb, vae_rgb_enc, vae_txt_enc, vae_mult_enc, vae_rgb_dec, vae_txt_dec, vocab, vocab_size, pad_index = \
             load_checkpoint(folder=args.load_dir,
                             filename='checkpoint_{}_{}_best'.format(args.sup_lvl, iter_num))
-        print("iteration {}".format(iter_num))
-        print("best training epoch: {}".format(epoch))
+        
+        vae_emb.to(device)
+        vae_rgb_enc.to(device)
+        vae_txt_enc.to(device)
+        vae_mult_enc.to(device)
+        vae_rgb_dec.to(device)
+        vae_txt_dec.to(device)
 
-        losses.append(test_loss(vocab))
-        accuracies.append(test_refgame_accuracy(vocab))
+        print("performing sanity checks ...")
+        sanity_check()
+        print()
 
-    losses = np.array(losses)
-    accuracies = np.array(accuracies)
-    np.save(os.path.join(args.out_dir, 'accuracies_{}.npy'.format(args.sup_lvl)), accuracies)
-    np.save(os.path.join(args.out_dir, 'final_losses_{}.npy'.format(args.sup_lvl)), losses)
+    #     print("iteration {}".format(iter_num))
+    #     print("best training epoch: {}".format(epoch))
 
-    print()
-    print("======> Average loss: {}".format(np.mean(losses)))
-    print("======> Average accuracy: {}".format(np.mean(accuracies)))
+    #     losses.append(test_loss())
+    #     accuracies.append(test_refgame_accuracy())
+
+    # losses = np.array(losses)
+    # accuracies = np.array(accuracies)
+    # np.save(os.path.join(args.out_dir, 'accuracies_{}.npy'.format(args.sup_lvl)), accuracies)
+    # # np.save(os.path.join(args.out_dir, 'final_losses_{}.npy'.format(args.sup_lvl)), losses)
+
+    # print()
+    # print("======> Average loss: {}".format(np.mean(losses)))
+    # print("======> Average accuracy: {}".format(np.mean(accuracies)))
