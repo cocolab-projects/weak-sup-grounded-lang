@@ -216,7 +216,9 @@ class ColorDecoder(nn.Module):
                                         nn.Linear(hidden_dim, rgb_dim))
     
     def forward(self, z_sample):
-        return torch.sigmoid(self.sequential(z_sample))
+        raw = self.sequential(z_sample)
+        # print("raw and sigmoid pair: {} and {}".format(raw, torch.sigmoid(raw)))
+        return torch.sigmoid(raw)
 
 class TextDecoder(nn.Module):
     """

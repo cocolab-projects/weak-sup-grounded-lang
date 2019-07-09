@@ -33,7 +33,7 @@ if __name__ == '__main__':
                         help='how much of the data to supervise [default: 1.0]')
     parser.add_argument('--z_dim', type=int, default=100,
                         help='number of latent dimension [default = 100]')
-    parser.add_argument('--word_dropout', type=float, default=0.,
+    parser.add_argument('--dropout', type=float, default=0.,
                         help='word dropout in text generation [default = 0.]')
     parser.add_argument('--batch_size', type=int, default=100,
                         help='batch size [default=100]')
@@ -209,7 +209,7 @@ if __name__ == '__main__':
         vae_mult_enc = MultimodalEncoder(vae_emb, z_dim)
         vae_rgb_dec = ColorDecoder(z_dim)
         vae_txt_dec = TextDecoder(vae_emb, z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
-                                    w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.word_dropout)
+                                    w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
 
         # Mount devices unto GPU
         vae_emb = vae_emb.to(device)
