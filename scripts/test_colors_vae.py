@@ -26,9 +26,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('load_dir', type=str, help='where to load checkpoints from')
     parser.add_argument('out_dir', type=str, help='where to store results from')
-    parser.add_argument('--sup_lvl', type=float, help='supervision level, if any')
+    parser.add_argument('--sup_lvl', type=float, default=1.0,
+                        help='supervision level, if any')
     parser.add_argument('--num_iter', type=int, default=1,
                         help='number of total iterations performed on each setting [default: 1]')
+    parser.add_argument('--alpha', type=float, default=1,
+                        help='lambda argument for text loss')
+    parser.add_argument('--beta', type=float, default=1,
+                        help='lambda argument for rgb loss')
     parser.add_argument('--hard', action='store_true', help='whether the dataset is to be easy')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
@@ -174,6 +179,7 @@ if __name__ == '__main__':
         return accuracy
 
     def load_checkpoint(folder='./', filename='model_best'):
+        print("\n loading checkpoint file: {}.pth.tar ...".format(filename)) 
         checkpoint = torch.load(folder + filename + '.pth.tar')
         epoch = checkpoint['epoch']
         vae_emb_sd = checkpoint['vae_emb']
@@ -213,27 +219,31 @@ if __name__ == '__main__':
         vae_rgb_dec.eval()
         vae_txt_dec.eval()
 
-        z_y_mu, z_y_logvar = vae_rgb_enc(torch.tensor(
-                                        [[70., 200., 70.],
-                                        [36, 220, 36],
-                                        [180, 50, 180],
-                                        [150, 150, 150],
-                                        [30, 30, 30],
-                                        [190, 30, 30]
-                                        ]).to(device))
+        example = torch.tensor([[70., 200., 70.],
+                                [36, 220, 36],
+                                [180, 50, 180],
+                                [150, 150, 150],
+                                [30, 30, 30],
+                                [190, 30, 30]
+                                ]).to(device)
+        z_y_mu, z_y_logvar = vae_rgb_enc()
         y_mu_z_y = vae_rgb_dec(z_y_mu)
-        print(y_mu_z_y * 255.0)
+        print("encoded colors: {}".format(example))
+        print("decoded colors: {}".format(y_mu_z_y * 255.0))
+        print()
         return
 
     print("=== begin testing ===")
 
-    losses, accuracies = [], []
+    losses, accuracies, best_epochs = [], [], []
     for iter_num in range(1, args.num_iter + 1):
-
-        print("loading checkpoint files ...")
+        filename = 'checkpoint_vae_{}_{}_alpha={}_beta={}_best'.format(args.sup_lvl,
+                                                                        iter_num,
+                                                                        args.alpha,
+                                                                        args.beta)
+        
         epoch, train_args, vae_emb, vae_rgb_enc, vae_txt_enc, vae_mult_enc, vae_rgb_dec, vae_txt_dec, vocab, vocab_size, pad_index = \
-            load_checkpoint(folder=args.load_dir,
-                            filename='checkpoint_{}_{}_best'.format(args.sup_lvl, iter_num))
+            load_checkpoint(folder=args.load_dir, filename=filename)
         
         vae_emb.to(device)
         vae_rgb_enc.to(device)
@@ -242,23 +252,21 @@ if __name__ == '__main__':
         vae_rgb_dec.to(device)
         vae_txt_dec.to(device)
 
-        print("... loading complete.")
-
         print("performing sanity checks ...")
         sanity_check()
-        print()
 
-        print()
         print("iteration {} with alpha {} and beta {}".format(iter_num, train_args.alpha, train_args.beta))
         print("best training epoch: {}".format(epoch))
 
         losses.append(test_loss())
         accuracies.append(test_refgame_accuracy())
+        best_epochs.append(epoch)
 
     losses = np.array(losses)
     accuracies = np.array(accuracies)
-    np.save(os.path.join(args.out_dir, 'accuracies_{}.npy'.format(args.sup_lvl)), accuracies)
-    # np.save(os.path.join(args.out_dir, 'final_losses_{}.npy'.format(args.sup_lvl)), losses)
+    np.save(os.path.join(args.out_dir, 'accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), accuracies)
+    np.save(os.path.join(args.out_dir, 'final_losses_{}_alpha={}_beta={}.npy'.format()), losses)
+    np.save(os.paht.join(args.out_dir, 'best_epochs_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), best_epochs)
 
     print()
     print("======> Average loss: {:6f}".format(np.mean(losses)))

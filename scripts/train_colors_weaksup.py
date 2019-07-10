@@ -19,65 +19,7 @@ from utils import (AverageMeter, save_checkpoint)
 from models import ColorSupervised
 
 if __name__ == '__main__':
-    def train(epoch):
-        sup_img.train()
-
-        loss_meter = AverageMeter()
-        pbar = tqdm(total=len(train_loader))
-        for batch_idx, (y_rgb, x_inp, x_tgt, x_len) in enumerate(train_loader):
-            batch_size = x_inp.size(0) 
-            y_rgb = y_rgb.to(device).float()
-            x_inp = x_inp.to(device)
-            x_len = x_len.to(device)
-
-            # obtain predicted rgb
-            pred_rgb = sup_img(x_inp, x_len)
-            pred_rgb = torch.sigmoid(pred_rgb)
-
-            # loss between actual and predicted rgb: Mean Squared Error
-            loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
-
-            loss_meter.update(loss.item(), batch_size)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            pbar.set_postfix({'loss': loss_meter.avg})
-            pbar.update()
-        pbar.close()
-            
-        if epoch % 10 == 0:
-            print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
-        
-        return loss_meter.avg
-
-
-    def test(epoch):
-        sup_img.eval()
-
-        with torch.no_grad():
-            loss_meter = AverageMeter()
-            pbar = tqdm(total=len(test_loader))
-
-            for batch_idx, (y_rgb, x_inp, x_tgt, x_len) in enumerate(test_loader):
-                batch_size = x_inp.size(0)
-                y_rgb = y_rgb.to(device).float()
-                x_inp = x_inp.to(device)
-                x_len = x_len.to(device)
-
-                pred_rgb = sup_img(x_inp, x_len)
-                pred_rgb = torch.sigmoid(pred_rgb)
-
-                loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
-                loss_meter.update(loss.item(), batch_size)  
-
-                pbar.update()
-            pbar.close()
-            if epoch % 10 == 0:
-                print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
-        return loss_meter.avg
-
-    # Parse arguments
+        # Parse arguments
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('out_dir', type=str, help='where to save checkpoints')
@@ -101,6 +43,61 @@ if __name__ == '__main__':
 
     random.seed(args.seed)
     np.random.seed(args.seed)
+
+    def train(epoch):
+        sup_img.train()
+
+        loss_meter = AverageMeter()
+        pbar = tqdm(total=len(train_loader))
+        for batch_idx, (y_rgb, x_inp, x_tgt, x_len) in enumerate(train_loader):
+            batch_size = x_inp.size(0) 
+            y_rgb = y_rgb.to(device).float()
+            x_inp = x_inp.to(device)
+            x_len = x_len.to(device)
+
+            # obtain predicted rgb
+            pred_rgb = sup_img(x_inp, x_len)
+
+            # loss between actual and predicted rgb: Mean Squared Error
+            loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
+
+            loss_meter.update(loss.item(), batch_size)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            pbar.set_postfix({'loss': loss_meter.avg})
+            pbar.update()
+        pbar.close()
+            
+        if epoch % 10 == 0:
+            print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
+        
+        return loss_meter.avg
+
+    def test(epoch):
+        sup_img.eval()
+
+        with torch.no_grad():
+            loss_meter = AverageMeter()
+            pbar = tqdm(total=len(test_loader))
+
+            for batch_idx, (y_rgb, x_inp, x_tgt, x_len) in enumerate(test_loader):
+                batch_size = x_inp.size(0)
+                y_rgb = y_rgb.to(device).float()
+                x_inp = x_inp.to(device)
+                x_len = x_len.to(device)
+
+                pred_rgb = sup_img(x_inp, x_len)
+
+                loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
+                loss_meter.update(loss.item(), batch_size)  
+
+                pbar.update()
+            pbar.close()
+            if epoch % 10 == 0:
+                print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
+        return loss_meter.avg
 
     print("begin training with supervision level: {} ...".format(args.sup_lvl))
     for i in range(1, args.num_iter + 1):
@@ -135,7 +132,6 @@ if __name__ == '__main__':
         sup_img = ColorSupervised(vocab_size)
         sup_img = sup_img.to(device)
         optimizer = torch.optim.Adam(sup_img.parameters(), lr=args.lr)
-
         
         best_loss = float('inf')
         track_loss = np.zeros((args.epochs, 2))

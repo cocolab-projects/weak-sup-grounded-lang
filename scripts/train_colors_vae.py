@@ -37,8 +37,8 @@ if __name__ == '__main__':
                         help='word dropout in text generation [default = 0.]')
     parser.add_argument('--batch_size', type=int, default=100,
                         help='batch size [default=100]')
-    parser.add_argument('--lr', type=float, default=0.001,
-                        help='learning rate [default=0.001]')
+    parser.add_argument('--lr', type=float, default=0.0003,
+                        help='learning rate [default=0.0003]')
     parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs [default: 50]')
     parser.add_argument('--alpha', type=float, default=1,
@@ -128,7 +128,7 @@ if __name__ == '__main__':
             loss_meter = AverageMeter()
             pbar = tqdm(total=len(test_loader))
 
-            for batch_idx, (y_rgb, x_src, x_tgt, x_len) in enumerate(train_loader):
+            for batch_idx, (y_rgb, x_src, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_src.size(0) 
                 y_rgb = y_rgb.to(device).float()
                 x_src = x_src.to(device)
@@ -168,10 +168,16 @@ if __name__ == '__main__':
                 print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
         return loss_meter.avg
 
-    print("begin training with supervision level: {} ...".format(args.sup_lvl))
+    print("=== begin training ===")
+    print("args: sup_lvl: {} alpha: {} beta: {} seed: {} hard?: {} cuda?: {}".format(args.sup_lvl,
+                                                                                    args.alpha,
+                                                                                    args.beta,
+                                                                                    args.seed,
+                                                                                    args.hard,
+                                                                                    args.cuda))
+
     for i in range(1, args.num_iter + 1):
-        print()
-        print("Training iteration {} for supervision level {}".format(i, args.sup_lvl))
+        print("\nTraining iteration {} for supervision level {}".format(i, args.sup_lvl))
         
         # set random seeds
         random_iter_seed = random.randint(0, 500)
@@ -256,7 +262,7 @@ if __name__ == '__main__':
                 'vocab_size': vocab_size,
                 'seed': random_iter_seed
             }, is_best, folder=args.out_dir,
-            filename='checkpoint_vae_{}_{}'.format(args.sup_lvl, i))
+            filename='checkpoint_vae_{}_{}_alpha={}_beta={}'.format(args.sup_lvl, i, args.alpha, args.beta))
             np.save(os.path.join(args.out_dir,
                 'loss_{}_{}.npy'.format(args.sup_lvl, i)), track_loss)
 
