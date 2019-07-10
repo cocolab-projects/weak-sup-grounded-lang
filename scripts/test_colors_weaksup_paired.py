@@ -1,9 +1,14 @@
 import os
 import sys
 import numpy as np
+from tqdm import tqdm
 
 import torch 
+import torch.nn as nn
 from torch.utils.data import DataLoader
+import torch.optim as optim
+import torch.nn.functional as F
+
 from utils import (AverageMeter)
 from models import (ColorSupervised, ColorSupervised_Paired)
 from color_dataset import (ColorDataset, Colors_ReferenceGame, WeakSup_ColorReference)
@@ -42,9 +47,9 @@ if __name__ == '__main__':
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
 
         model.eval()
+
         with torch.no_grad():
             loss_meter = AverageMeter()
-
             for batch_idx, (tgt_rgb, d1_rgb, d2_rgb, x_inp, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_inp.size(0)
                 tgt_rgb = tgt_rgb.to(device).float()
@@ -59,7 +64,7 @@ if __name__ == '__main__':
                 d2_score = model(d2_rgb, x_inp, x_len)
 
                 # loss between actual and predicted rgb: cross entropy
-                loss = F.cross_entropy(torch.cat([tgt_score,d1_score,d2_score], 1), torch.LongTensor(np.zeros(batch_size)))
+                loss = F.cross_entropy(torch.cat([tgt_score,d1_score,d2_score], 1), torch.LongTensor(np.zeros(batch_size)).to(device))
                 loss_meter.update(loss.item(), batch_size)
             print('====> Final Test Loss: {:.4f}'.format(loss_meter.avg))
         return loss_meter.avg
@@ -77,11 +82,8 @@ if __name__ == '__main__':
         model.eval()
 
         with torch.no_grad():
-            loss_meter = AverageMeter()
-
             total_count = 0
             correct_count = 0
-
             for batch_idx, (tgt_rgb, d1_rgb, d2_rgb, x_inp, x_tgt, x_len) in enumerate(ref_loader):
                 batch_size = x_inp.size(0)
                 tgt_rgb = tgt_rgb.to(device).float()
@@ -95,17 +97,12 @@ if __name__ == '__main__':
                 d1_score = model(d1_rgb, x_inp, x_len)
                 d2_score = model(d2_rgb, x_inp, x_len)
 
-                # loss between actual and predicted rgb: cross entropy
-                loss = F.cross_entropy(torch.cat([tgt_score,d1_score,d2_score], 1), torch.LongTensor(np.zeros(batch_size)))
-
                 soft = nn.Softmax(dim=1)
                 loss = soft(torch.cat([tgt_score,d1_score,d2_score], 1))
                 softList = torch.argmax(loss, dim=1)
 
                 correct_count += torch.sum(softList == 0).item()
                 total_count += softList.size(0)
-
-                loss_meter.update(loss.item(), batch_size)
 
             accuracy = correct_count / float(total_count) * 100
             print('====> Final Accuracy: {}/{} = {}%'.format(correct_count, total_count, accuracy))

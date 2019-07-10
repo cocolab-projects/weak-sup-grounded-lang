@@ -1,6 +1,7 @@
 import os
 import sys
 import numpy as np
+from tqdm import tqdm
 
 import torch 
 from torch.utils.data import DataLoader
@@ -52,10 +53,10 @@ if __name__ == '__main__':
                 x_len = x_len.to(device)
 
                 # obtain predicted rgb
-                pred_rgb = sup_img(tgt_rgb, x_inp, x_len)
+                pred_rgb = model(x_inp, x_len)
 
                 # loss between actual and predicted rgb: cross entropy
-                loss = torch.mean(torch.pow(tgt_rgb - pred_rgb), 2)
+                loss = torch.mean(torch.pow(pred_rgb - tgt_rgb, 2))
                 loss_meter.update(loss.item(), batch_size)
             print('====> Final Test Loss: {:.4f}'.format(loss_meter.avg))
         return loss_meter.avg
@@ -73,11 +74,8 @@ if __name__ == '__main__':
         model.eval()
 
         with torch.no_grad():
-            loss_meter = AverageMeter()
-
             total_count = 0
             correct_count = 0
-
             for batch_idx, (tgt_rgb, d1_rgb, d2_rgb, x_inp, x_tgt, x_len) in enumerate(ref_loader):
                 batch_size = x_inp.size(0)
                 tgt_rgb = tgt_rgb.to(device).float()
@@ -87,22 +85,16 @@ if __name__ == '__main__':
                 x_len = x_len.to(device)
 
                 # obtain predicted rgb
-                pred_rgb = sup_img(tgt_rgb, x_inp, x_len)
-                d1_score = sup_img(d1_rgb, x_inp, x_len)
-                d2_score = sup_img(d2_rgb, x_inp, x_len)
+                pred_rgb = model(x_inp, x_len)
 
-                # loss between actual and predicted rgb: cross entropy
-                loss = torch.mean(torch.pow(tgt_rgb - pred_rgb), 2)
-
-                diff_tgt = torch.mean(torch.pow(pred_rgb - tgt_rgb, 2))
-                diff_d1 = torch.mean(torch.pow(pred_rgb - d1_rgb, 2))
-                diff_d2 = torch.mean(torch.pow(pred_rgb - d2_rgb, 2))
+                # loss between actual and predicted rgb:
+                diff_tgt = torch.mean(torch.pow(pred_rgb - tgt_rgb, 2), 1)
+                diff_d1 = torch.mean(torch.pow(pred_rgb - d1_rgb, 2), 1)
+                diff_d2 = torch.mean(torch.pow(pred_rgb - d2_rgb, 2), 1)
 
                 total_count += diff_tgt.size(0)
-                correctList = diff_tgt < diff_d1 and diff_d1 < diff_d2
-                correct_count += torch.sum(correctList).item()
-
-                loss_meter.update(loss.item(), batch_size)
+                correctList = np.logical_and(np.array(diff_tgt.cpu()) < np.array(diff_d1.cpu()), np.array(diff_tgt.cpu()) < np.array(diff_d2.cpu()))
+                correct_count += np.sum(correctList)
 
             accuracy = correct_count / float(total_count) * 100
             print('====> Final Accuracy: {}/{} = {}%'.format(correct_count, total_count, accuracy))

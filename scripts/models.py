@@ -55,7 +55,7 @@ class ColorSupervised(nn.Module):
             _, reversed_idx = torch.sort(sorted_idx)
             hidden = hidden[reversed_idx]
 
-        return self.sequential(hidden)
+        return torch.sigmoid(self.sequential(hidden))
 
 class ColorSupervised_Paired(nn.Module):
     """
@@ -216,10 +216,12 @@ class MultimodalEncoder(nn.Module):
         self.hidden_dim = hidden_dim
         self.gru = nn.GRU(self.embedding_dim, self.hidden_dim, batch_first=True)
         self.txt_lin = nn.Linear(hidden_dim, hidden_dim // 2)
-        self.rgb_seq = nn.Sequential(nn.Linear(rgb_dim, hidden_dim), \
-                                        nn.ReLU(),  \
+        self.rgb_seq = nn.Sequential(nn.Linear(rgb_dim, hidden_dim),
+                                        nn.ReLU(),
                                         nn.Linear(hidden_dim, hidden_dim // 2))
-        self.linear = nn.Linear(hidden_dim, z_dim * 2)
+        self.sequential = nn.Sequential(nn.Linear(hidden_dim, hidden_dim // 2),
+                                        nn.ReLU(), 
+                                        nn.Linear(hidden_dim // 2, z_dim * 2))
     
     def forward(self, rgb, seq, length):
         batch_size = seq.size(0)
@@ -247,9 +249,8 @@ class MultimodalEncoder(nn.Module):
         txt_hidden = self.txt_lin(hidden)
         rgb_hidden = self.rgb_seq(rgb)
 
-        concat = torch.cat((txt_hidden, rgb_hidden), 1)
-        # breakpoint()
-        z_mu, z_logvar = torch.chunk(self.linear(concat), 2, dim=1)
+        concat = F.relu(torch.cat((txt_hidden, rgb_hidden), 1))
+        z_mu, z_logvar = torch.chunk(self.sequential(concat), 2, dim=1)
 
         return z_mu, z_logvar
 
@@ -342,8 +343,7 @@ class TextDecoder(nn.Module):
         
         if batch_size > 1:
             _, reversed_idx = torch.sort(sorted_idx)
-            hidden = hidden[-1, ...]
-            hidden = hidden[reversed_idx]
+            output = output[reversed_idx]
 
         max_length = output.size(1)
         output_2d = output.view(batch_size * max_length, self.hidden_dim)
