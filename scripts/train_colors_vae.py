@@ -15,9 +15,9 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from color_dataset import (ColorDataset, WeakSup_ColorDataset)
 
-from utils import (AverageMeter, save_checkpoint, reparameterize, loss_multimodal)
+from utils import (AverageMeter, save_checkpoint, _reparameterize, loss_multimodal)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
-                    ColorEncoder, MultimodalEncoder, ColorDecoder)
+                    ColorEncoder, ColorEncoder_Augmented, MultimodalEncoder, ColorDecoder)
 
 SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
@@ -59,6 +59,12 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
 
     def train(epoch):
+        """Function: train
+        Args:
+            param1 (int) epoch: training epoch
+        Returns:
+            (float): training loss over epoch
+        """
         vae_emb.train()
         vae_rgb_enc.train()
         vae_txt_enc.train()
@@ -81,9 +87,9 @@ if __name__ == '__main__':
             z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_src, x_len)
 
             # sample via reparametrization
-            z_sample_x = reparameterize(z_x_mu, z_x_logvar)
-            z_sample_y = reparameterize(z_y_mu, z_y_logvar)
-            z_sample_xy = reparameterize(z_xy_mu, z_xy_logvar)
+            z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
+            z_sample_y = _reparameterize(z_y_mu, z_y_logvar)
+            z_sample_xy = _reparameterize(z_xy_mu, z_xy_logvar)
 
             # "predictions"
             y_mu_z_y = vae_rgb_dec(z_sample_y)
@@ -141,9 +147,9 @@ if __name__ == '__main__':
                 z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_src, x_len)
 
                 # sample via reparametrization
-                z_sample_x = reparameterize(z_x_mu, z_x_logvar)
-                z_sample_y = reparameterize(z_y_mu, z_y_logvar)
-                z_sample_xy = reparameterize(z_xy_mu, z_xy_logvar)
+                z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
+                z_sample_y = _reparameterize(z_y_mu, z_y_logvar)
+                z_sample_xy = _reparameterize(z_xy_mu, z_xy_logvar)
 
                 # "predictions"
                 y_mu_z_y = vae_rgb_dec(z_sample_y)
@@ -176,13 +182,13 @@ if __name__ == '__main__':
                                                                                     args.hard,
                                                                                     args.cuda))
 
+    # repeat training on same model w/ different random seeds for |num_iter| times
     for i in range(1, args.num_iter + 1):
         print("\nTraining iteration {} for supervision level {}".format(i, args.sup_lvl))
         
         # set random seeds
         random_iter_seed = random.randint(0, 500)
         print("Random seed set to : {}".format(random_iter_seed))
-
         torch.cuda.manual_seed(random_iter_seed)
         random.seed(random_iter_seed)
         torch.manual_seed(random_iter_seed)
@@ -225,6 +231,7 @@ if __name__ == '__main__':
         vae_rgb_dec = vae_rgb_dec.to(device)
         vae_txt_dec = vae_txt_dec.to(device)
 
+        # Define optimizer
         optimizer = torch.optim.Adam(
             chain(
             vae_emb.parameters(),
