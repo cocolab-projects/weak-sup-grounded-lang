@@ -17,7 +17,9 @@ import nltk
 from nltk import sent_tokenize, word_tokenize
 
 class AverageMeter(object):
-   """Computes and stores the average and current value"""
+   """Computes and stores the average and current value across groups of data
+
+   """
    def __init__(self):
        self.reset()
 
@@ -42,21 +44,31 @@ def save_checkpoint(state, is_best, folder='./', filename='checkpoint'):
                         os.path.join(folder, filename + '_best.pth.tar'))
 
 def get_text(i2w, input, length):
-  """ Returns the actual sentence
-  """
-  text = ""
-  for j in range(length):
-    text += " " + i2w[input[j].item()]
-  return text
+    """Function: get_text
+    Args:
+        param1 (dict) i2w: from vocab. index-to-token dictionary
+        param2 (PyTorch Tensor) input: sequence of indices
+        param3 (int) length: length of sentence w/o padding
+    Returns:
+        (string): translated & concatenated tokens
+
+    Translates a sequence (of indices) input to a string of original tokens
+    """
+    text = ""
+    for j in range(length):
+        text += " " + i2w[input[j].item()]
+    return text
 
 
 def hsl2rgb(hsl):
-    """Convert HSL coordinates to RGB coordinates.
+    """Function: hsl2rgb 
+    Args:
+        param1 (Numpy.array) hsl: contains H, S, L coordinates
+    Returns:
+        (tuple): tuple of translated RGB coordinate
+
+    Convert HSL coordinates to RGB coordinates.
     https://www.rapidtables.com/convert/color/hsl-to-rgb.html
-    @param hsl: np.array of size 3
-                contains H, S, L coordinates
-    @return rgb: (integer, integer, integer)
-                RGB coordinate
     """
     H, S, L = hsl[0], hsl[1], hsl[2]
     assert (0 <= H <= 360) and (0 <= S <= 1) and (0 <= L <= 1)
@@ -84,22 +96,42 @@ def hsl2rgb(hsl):
     return (R, G, B)
 
 def _kl_normal_normal(mu1, mu2, logvar1, logvar2):
+    """Function: _kl_normal_normal
+    Args:
+        param1 (PyTorch.Tensor) mu1: mu_p
+        param2 (PyTorch.Tensor) mu2: mu_q
+        param3 (PyTorch.Tensor) logvar1: logvar_p
+        param3 (PyTorch.Tensor) logvar2: logvar_q
+    Returns:
+        (PyTorch.Tensor): KL divergence between |p| and |q|
+
+    Computes KL divergence between two Gaussians p, q
+    https://tgmstat.wordpress.com/2013/07/10/kullback-leibler-divergence/
+    Equation:
+        D_KL(P || Q) = SUM(P(x)(logP(x) - logQ(x))
+                     = log (var_p / var_q) + (var_p^2 + (mu_p - mu_q)^2) / (2 * var_q) - 1/2
+    """
     var1, var2 = torch.exp(logvar1), torch.exp(logvar2)
     return 0.5 * (((mu1 - mu2)**2 + var1 - var2)/var2 + logvar2 - logvar1)
 
-# def _kl_normal_normal(p_mu, q_mu, p_logvar, q_logvar):
-#     p_scale = torch.exp(0.5 * p_logvar)
-#     q_scale = torch.exp(0.5 * q_logvar)
-#     var_ratio = (p_scale / q_scale).pow(2)
-#     t1 = ((p_mu - q_mu) / q_scale).pow(2)
-#     return 0.5 * (var_ratio + t1 - 1 - var_ratio.log())
+def _reparameterize(mu, logvar):
+    """Function: reparameterize
+    Args:
+        param1 (PyTorch.Tensor) mu: mean for latent variable |z|
+        param2 (PyTorch.Tensor) logvar: logvar for latent variable |z|
+    Returns:
+        (PyTorch.Tensor): reparameterized sample
 
-def reparameterize(mu, logvar):
-    epsilon = np.random.randn()
+    Samples from standard Gaussain and reparameterizes
+    Equation:
+        epsilon ~ N(0,1)
+        epsilon * var^(1/2) + mean
+    """
+    epsilon = torch.randn_like(mu)
     return torch.exp(0.5 * logvar) * epsilon + mu
 
-def log_mean_exp(x, dim=1):
-    r"""log(1/k * sum(exp(x))): this normalizes x.
+def _log_mean_exp(x, dim=1):
+    """log(1/k * sum(exp(x))): this normalizes x.
     @param x: PyTorch.Tensor
               samples from gaussian
     @param dim: integer (default: 1)
@@ -175,14 +207,13 @@ def get_image_text_joint_nll(y, y_mu_list, x_tgt, x_tgt_logits_list, z_list, z_m
 
     log_p_x_given_z = score_txt_logits(x_tgt, x_tgt_logits_list, pad_index)
     log_p_y_given_z = bernoulli_log_pdf(y.float(), y_mu_list)
-    # log_p_y_given_z = -torch.sum(torch.pow(y - y_mu_list, 2), dim=1) 
     log_q_z_given_xy = torch.sum(gaussian_log_pdf(z_list, z_mu, z_logvar), dim=1)
     log_p_z = torch.sum(isotropic_gaussian_log_pdf(z_list), dim=1)
     log_p_xy = log_p_x_given_z + log_p_y_given_z + log_p_z - log_q_z_given_xy
     log_p_xy = log_p_xy.cpu()  # cast to CPU so we dont blow up
+    breakpoint()
 
-
-    nll = log_mean_exp(log_p_xy.unsqueeze(0), dim=1)
+    nll = _log_mean_exp(log_p_xy.unsqueeze(0), dim=1)
     nll = -torch.mean(nll)
 
     return nll

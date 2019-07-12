@@ -147,6 +147,40 @@ class ColorEncoder(nn.Module):
         
         return z_mu, z_logvar
 
+class ColorEncoder_Augmented(nn.Module):
+    """
+    x: text, y: image, z: latent
+    Model p(z|y)
+    @param z_dim: number of latent dimensions
+    @param hidden_dim: integer [default: 256]
+                       number of hidden nodes in GRU
+    """
+    def __init__(self, z_dim, rgb_dim=3, hidden_dim=256):
+        super(ColorEncoder_Augmented, self).__init__()
+        assert (rgb_dim == 3)
+
+        self.rgb_dim = rgb_dim
+        self.z_dim = z_dim
+        self.hidden_dim = hidden_dim
+        self.sequential = nn.Sequential(nn.Linear(rgb_dim, hidden_dim),
+                                        nn.ReLU(),
+                                        nn.Linear(hidden_dim, hidden_dim * 4),
+                                        nn.LeakyReLU(),
+                                        nn.Linear(hidden_dim * 4, hidden_dim * 3),
+                                        nn.LeakyReLU(),
+                                        nn.Linear(hidden_dim * 3, hidden_dim * 2),
+                                        nn.ReLU(),
+                                        nn.Linear(hidden_dim * 2, hidden_dim),
+                                        nn.LeakyReLU(),
+                                        nn.Linear(hidden_dim, z_dim * 2)
+                                        )
+    
+    def forward(self, rgb):
+        # sent rgb value to latent dimension
+        z_mu, z_logvar = torch.chunk(self.sequential(rgb), 2, dim=1)
+        
+        return z_mu, z_logvar
+
 class TextEncoder(nn.Module):
     """
     x: text, y: image, z: latent
@@ -312,7 +346,7 @@ class TextDecoder(nn.Module):
 
         if batch_size > 1:
             sorted_lengths, sorted_idx = torch.sort(length, descending=True)
-            z = z_sample[sorted_idx]
+            z_sample = z_sample[sorted_idx]
             seq = seq[sorted_idx]
         else:
             sorted_lengths = length  # since we use this variable later
@@ -323,7 +357,7 @@ class TextDecoder(nn.Module):
             prob[(seq.cpu().data - self.sos_index) & \
                  (seq.cpu().data - self.pad_index) == 0] = 1
             mask_seq = seq.clone()
-            mask_seq[(prob < self.word_dropout).to(z.device)] = self.unk_index
+            mask_seq[(prob < self.word_dropout).to(z_sample.device)] = self.unk_index
             seq = mask_seq
 
         # embed sequences
@@ -333,7 +367,7 @@ class TextDecoder(nn.Module):
         packed = rnn_utils.pack_padded_sequence(embed_seq, sorted_lengths, batch_first=True)
 
         # initialize hidden (initialize |z| part in |p(x_i|z, x_{i-1})| )
-        hidden = self.latent2hidden(z)
+        hidden = self.latent2hidden(z_sample)
         hidden = hidden.unsqueeze(0).contiguous()
 
         # forward RNN (recurrently obtain |x_i| given |z| and |x_{i-1})

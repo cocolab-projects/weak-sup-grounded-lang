@@ -19,7 +19,7 @@ from utils import (AverageMeter, save_checkpoint)
 from models import ColorSupervised
 
 if __name__ == '__main__':
-        # Parse arguments
+    # Parse arguments
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('out_dir', type=str, help='where to save checkpoints')
