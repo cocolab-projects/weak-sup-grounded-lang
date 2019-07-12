@@ -207,11 +207,11 @@ def get_image_text_joint_nll(y, y_mu_list, x_tgt, x_tgt_logits_list, z_list, z_m
 
     log_p_x_given_z = score_txt_logits(x_tgt, x_tgt_logits_list, pad_index)
     log_p_y_given_z = bernoulli_log_pdf(y.float(), y_mu_list)
-    # log_p_y_given_z = -torch.sum(torch.pow(y - y_mu_list, 2), dim=1) 
     log_q_z_given_xy = torch.sum(gaussian_log_pdf(z_list, z_mu, z_logvar), dim=1)
     log_p_z = torch.sum(isotropic_gaussian_log_pdf(z_list), dim=1)
     log_p_xy = log_p_x_given_z + log_p_y_given_z + log_p_z - log_q_z_given_xy
     log_p_xy = log_p_xy.cpu()  # cast to CPU so we dont blow up
+    breakpoint()
 
     nll = _log_mean_exp(log_p_xy.unsqueeze(0), dim=1)
     nll = -torch.mean(nll)

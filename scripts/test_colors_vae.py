@@ -335,6 +335,7 @@ if __name__ == '__main__':
     np.save(os.path.join(args.out_dir, 'divergence_rates_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), diverge_rates)
     print("... saving complete.")
 
+    print("\n======> Best epochs: {}".format(best_epochs))
     print("\n======> Average loss: {:6f}".format(np.mean(losses)))
     print("======> Average mean-based accuracy: {:4f}".format(np.mean(mean_accuracies)))
 
