@@ -105,3 +105,4 @@ venv.bak/
 colors_sup/
 colors_weaksup
 notebooks
+datasets/
