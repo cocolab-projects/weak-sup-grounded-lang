@@ -1,4 +1,5 @@
 from __future__ import print_function
+from collections import Counter, OrderedDict
 
 import os
 import sys
@@ -42,6 +43,13 @@ def save_checkpoint(state, is_best, folder='./', filename='checkpoint'):
     if is_best:
         shutil.copyfile(os.path.join(folder, filename + '.pth.tar'),
                         os.path.join(folder, filename + '_best.pth.tar'))
+
+class OrderedCounter(Counter, OrderedDict):
+    'Counter that remembers the order elements are first seen'
+    def __repr__(self):
+        return '%s(%r)' % (self.__class__.__name__, OrderedDict(self))
+    def __reduce__(self):
+        return self.__class__, (OrderedDict(self), )
 
 def get_text(i2w, input, length):
     """Function: get_text

@@ -129,14 +129,14 @@ if __name__ == '__main__':
         device = torch.device('cuda' if args.cuda else 'cpu')
 
         # Define training dataset & build vocab
-        train_dataset = Chairs_ReferenceGame(supervision_level=args.sup_lvl, hard=args.hard)
+        train_dataset = Weaksup_Chairs_Reference(supervision_level=args.sup_lvl, split_mode='hard' if args.hard else 'easy')
         train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
 
         # Define test dataset
-        test_dataset = Weaksup_Chairs_Reference(vocab=vocab, split='Validation', hard=args.hard)
+        test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Validation', split_mode='hard' if args.hard else 'easy')
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
         # Define model
