@@ -13,10 +13,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
-from color_dataset import (ColorDataset, WeakSup_ColorDataset)
+from chair_dataset import (Chairs_ReferenceGame, Weaksup_Chairs_Reference)
 
 from utils import (AverageMeter, save_checkpoint)
-from models import ColorSupervised
+from models import TextImageCompatibility
 
 if __name__ == '__main__':
     # Parse arguments
@@ -45,21 +45,25 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
 
     def train(epoch):
-        sup_img.train()
+        txt_img_comp.train()
 
         loss_meter = AverageMeter()
         pbar = tqdm(total=len(train_loader))
-        for batch_idx, (y_rgb, x_inp, x_tgt, x_len) in enumerate(train_loader):
+        for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len) in enumerate(train_loader):
             batch_size = x_inp.size(0) 
-            y_rgb = y_rgb.to(device).float()
+            tgt_chair = tgt_chair.to(device).float()
+            d1_chair = d1_chair.to(device).float()
+            d2_chair = d2_chair.to(device).float()
             x_inp = x_inp.to(device)
             x_len = x_len.to(device)
 
             # obtain predicted rgb
-            pred_rgb = sup_img(x_inp, x_len)
+            tgt_score = txt_img_comp(tgt_chair, x_inp, x_len)
+            d1_score = txt_img_comp(d1_chair, x_inp, x_len)
+            d2_score = txt_img_comp(d2_chair, x_inp, x_len)
 
-            # loss between actual and predicted rgb: Mean Squared Error
-            loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
+            # loss: cross entropy
+            loss = F.cross_entropy(torch.cat([tgt_score, d1_score, d2_score], 1), torch.LongTensor(np.zeros(batch_size)).to(device))
 
             loss_meter.update(loss.item(), batch_size)
             optimizer.zero_grad()
@@ -75,22 +79,29 @@ if __name__ == '__main__':
         
         return loss_meter.avg
 
+
     def test(epoch):
-        sup_img.eval()
+        txt_img_comp.eval()
 
         with torch.no_grad():
             loss_meter = AverageMeter()
-            pbar = tqdm(total=len(test_loader))
 
-            for batch_idx, (y_rgb, x_inp, x_tgt, x_len) in enumerate(test_loader):
-                batch_size = x_inp.size(0)
-                y_rgb = y_rgb.to(device).float()
+            pbar = tqdm(total=len(test_loader))
+            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len) in enumerate(test_loader):
+                batch_size = x_inp.size(0) 
+                tgt_chair = tgt_chair.to(device).float()
+                d1_chair = d1_chair.to(device).float()
+                d2_chair = d2_chair.to(device).float()
                 x_inp = x_inp.to(device)
                 x_len = x_len.to(device)
 
-                pred_rgb = sup_img(x_inp, x_len)
+                # obtain predicted rgb
+                tgt_score = txt_img_comp(tgt_chair, x_inp, x_len)
+                d1_score = txt_img_comp(d1_chair, x_inp, x_len)
+                d2_score = txt_img_comp(d2_chair, x_inp, x_len)
 
-                loss = torch.mean(torch.pow(pred_rgb - y_rgb, 2))
+                # loss between actual and predicted rgb: cross entropy
+                loss = F.cross_entropy(torch.cat([tgt_score,d1_score,d2_score], 1), torch.LongTensor(np.zeros(batch_size)).to(device))
                 loss_meter.update(loss.item(), batch_size)  
 
                 pbar.update()
@@ -118,20 +129,19 @@ if __name__ == '__main__':
         device = torch.device('cuda' if args.cuda else 'cpu')
 
         # Define training dataset & build vocab
-        train_dataset = WeakSup_ColorDataset(supervision_level=args.sup_lvl, hard=args.hard)
+        train_dataset = Weaksup_Chairs_Reference(supervision_level=args.sup_lvl, split_mode='hard' if args.hard else 'easy')
         train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
 
         # Define test dataset
-        test_dataset = ColorDataset(vocab=vocab, split='Validation', hard=args.hard)
+        test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Validation', split_mode='hard' if args.hard else 'easy')
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
         # Define model
-        sup_img = ColorSupervised(vocab_size)
-        sup_img = sup_img.to(device)
-        optimizer = torch.optim.Adam(sup_img.parameters(), lr=args.lr)
+        txt_img_comp = TextImageCompatibility()
+        optimizer = torch.optim.Adam(txt_img_comp.parameters(), lr=args.lr)
         
         best_loss = float('inf')
         track_loss = np.zeros((args.epochs, 2))
@@ -147,7 +157,7 @@ if __name__ == '__main__':
             
             save_checkpoint({
                 'epoch': epoch,
-                'sup_img': sup_img.state_dict(),
+                'txt_img_comp': txt_img_comp.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'track_loss': track_loss,
                 'cmd_line_args': args,

@@ -9,6 +9,88 @@ import torch.nn.functional as F
 from torchvision import transforms
 import torch.nn.utils.rnn as rnn_utils
 
+class TextImageCompatibility(nn.Module):
+    def __init__(self, img_size=32, channel=3, embedding_dim=64, hidden_dim=256, n_filters=64):
+        super(TextImageCompatibility, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.embedding_dim = embedding_dim
+
+        self.hidden_dim = 256
+
+        self.gru = nn.GRU(self.embedding_dim, self.hidden_dim, batch_first=True)
+        self.txt_lin = nn.Linear(self.hidden_dim, self.hidden_dim // 2)
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(channels, n_filters, 2, 2, padding=0),
+            nn.ReLU(),
+            nn.Conv2d(n_filters, n_filters * 2, 2, 2, padding=0),
+            nn.ReLU(),
+            nn.Conv2d(n_filters * 2, n_filters * 4, 2, 2, padding=0))
+        cout = gen_32_conv_output_dim(img_size)
+        self.fc = nn.Linear(n_filters * 4 * cout**2, hidden_dim)
+        self.cout = cout
+        self.n_filters = n_filters
+        self.sequential = nn.Sequential(
+                                        nn.Linear(self.hidden_dim, self.hidden_dim // 3), \
+                                        nn.ReLU(),  \
+                                        nn.Linear(self.hidden_dim // 3, self.hidden_dim // 9), \
+                                        nn.ReLU(), \
+                                        nn.Linear(self.hidden_dim // 9, self.hidden_dim // 27), \
+                                        nn.ReLU(), \
+                                        nn.Linear(self.hidden_dim // 27, 1))
+
+    def forward(self, img, seq, length):
+        assert img.size(0) == seq.size(0)
+        batch_size = img.size(0)
+
+        # CNN portion for image
+        out = self.conv(img)
+        out = out.view(batch_size, self.n_filters * 4 * self.cout**2)
+        img_hidden = self.fc(out)
+
+        # RNN portion for text
+        if batch_size > 1:
+            sorted_lengths, sorted_idx = torch.sort(length, descending=True)
+            seq = seq[sorted_idx]
+
+        # embed sequences
+        embed_seq = self.embedding(seq)
+
+        # pack padded sequences
+        packed = rnn_utils.pack_padded_sequence(
+            embed_seq,
+            sorted_lengths.data.tolist() if batch_size > 1 else length.data.tolist(), batch_first=True)
+
+        # forward RNN
+        _, hidden = self.gru(packed)
+        hidden = hidden[-1, ...]
+        
+        if batch_size > 1:
+            _, reversed_idx = torch.sort(sorted_idx)
+            hidden = hidden[reversed_idx]
+        txt_hidden = self.txt_lin(hidden)
+
+        # concat then forward
+        concat = torch.cat((txt_hidden, img_hidden), 1)
+        return self.sequential(concat)
+
+def gen_32_conv_output_dim(s):
+    s = get_conv_output_dim(s, 2, 0, 2)
+    s = get_conv_output_dim(s, 2, 0, 2)
+    s = get_conv_output_dim(s, 2, 0, 2)
+    return s
+
+def get_conv_output_dim(I, K, P, S):
+    # I = input height/length
+    # K = filter size
+    # P = padding
+    # S = stride
+    # O = output height/length
+    O = (I - K + 2*P)/float(S) + 1
+    return int(O)
+
+########## Models for Colors dataset only (RGB & text) ##########
+
 class ColorSupervised(nn.Module):
     """
     Supervised, x: text, y: image (rgb value)
@@ -140,6 +222,40 @@ class ColorEncoder(nn.Module):
         self.sequential = nn.Sequential(nn.Linear(rgb_dim, hidden_dim), \
                                         nn.ReLU(),  \
                                         nn.Linear(hidden_dim, z_dim * 2))
+    
+    def forward(self, rgb):
+        # sent rgb value to latent dimension
+        z_mu, z_logvar = torch.chunk(self.sequential(rgb), 2, dim=1)
+        
+        return z_mu, z_logvar
+
+class ColorEncoder_Augmented(nn.Module):
+    """
+    x: text, y: image, z: latent
+    Model p(z|y)
+    @param z_dim: number of latent dimensions
+    @param hidden_dim: integer [default: 256]
+                       number of hidden nodes in GRU
+    """
+    def __init__(self, z_dim, rgb_dim=3, hidden_dim=256):
+        super(ColorEncoder_Augmented, self).__init__()
+        assert (rgb_dim == 3)
+
+        self.rgb_dim = rgb_dim
+        self.z_dim = z_dim
+        self.hidden_dim = hidden_dim
+        self.sequential = nn.Sequential(nn.Linear(rgb_dim, hidden_dim),
+                                        nn.ReLU(),
+                                        nn.Linear(hidden_dim, hidden_dim * 4),
+                                        nn.LeakyReLU(),
+                                        nn.Linear(hidden_dim * 4, hidden_dim * 3),
+                                        nn.LeakyReLU(),
+                                        nn.Linear(hidden_dim * 3, hidden_dim * 2),
+                                        nn.ReLU(),
+                                        nn.Linear(hidden_dim * 2, hidden_dim),
+                                        nn.LeakyReLU(),
+                                        nn.Linear(hidden_dim, z_dim * 2)
+                                        )
     
     def forward(self, rgb):
         # sent rgb value to latent dimension
@@ -312,7 +428,7 @@ class TextDecoder(nn.Module):
 
         if batch_size > 1:
             sorted_lengths, sorted_idx = torch.sort(length, descending=True)
-            z = z_sample[sorted_idx]
+            z_sample = z_sample[sorted_idx]
             seq = seq[sorted_idx]
         else:
             sorted_lengths = length  # since we use this variable later
@@ -323,7 +439,7 @@ class TextDecoder(nn.Module):
             prob[(seq.cpu().data - self.sos_index) & \
                  (seq.cpu().data - self.pad_index) == 0] = 1
             mask_seq = seq.clone()
-            mask_seq[(prob < self.word_dropout).to(z.device)] = self.unk_index
+            mask_seq[(prob < self.word_dropout).to(z_sample.device)] = self.unk_index
             seq = mask_seq
 
         # embed sequences
@@ -333,7 +449,7 @@ class TextDecoder(nn.Module):
         packed = rnn_utils.pack_padded_sequence(embed_seq, sorted_lengths, batch_first=True)
 
         # initialize hidden (initialize |z| part in |p(x_i|z, x_{i-1})| )
-        hidden = self.latent2hidden(z)
+        hidden = self.latent2hidden(z_sample)
         hidden = hidden.unsqueeze(0).contiguous()
 
         # forward RNN (recurrently obtain |x_i| given |z| and |x_{i-1})

@@ -101,7 +101,8 @@ if __name__ == '__main__':
         return accuracy
 
     def load_checkpoint(folder='./', filename='model_best'):
-        checkpoint = torch.load(folder + filename + '.pth.tar')
+        print("\nloading checkpoint file: {}.pth.tar ...\n".format(filename)) 
+        checkpoint = torch.load(os.path.join(folder, filename + '.pth.tar'))
         epoch = checkpoint['epoch']
         track_loss = checkpoint['track_loss']
         sup_img = checkpoint['sup_img']
