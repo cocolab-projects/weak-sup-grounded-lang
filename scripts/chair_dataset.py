@@ -28,21 +28,6 @@ TESTING_PERCENTAGE = 20 / 100
 MIN_USED = 2
 MAX_LEN = 10
 
-def load_char_id_to_utterance_map(context_condition='all'):
-    with open(os.path.join(RAW_DIR, 'chairs2k_group_data.csv')) as fp:
-        df = pd.read_csv(fp)
-
-    df = df[df['correct'] == True]
-    df = df[df['communication_role'] == 'speaker']
-
-    if context_condition != 'all':
-        df = df[df['context_condition'] == context_condition]
-
-    chair_id = np.asarray(df['selected_chair'])
-    text = np.asarray(df['text'])
-
-    return chair_id, text
-
 class ChairsDataset(data.Dataset):
     def __init__(self, vocab=None, split='Train', context_condition='all', 
                  split_mode='easy', image_size=32, image_transform=None):
@@ -78,9 +63,7 @@ class ChairsDataset(data.Dataset):
         print(data)
 
         if self.split_mode == 'easy':
-            # print(data)
-            # for each unique chair, divide all rows containing it into
-            # training and test sets
+            # for each unique chair, divide all rows containing it into training and test sets
             target_names = data[:, 3]
             target_uniqs = np.unique(target_names)
             new_data = []
@@ -110,11 +93,11 @@ class ChairsDataset(data.Dataset):
             train_len = len(TRAINING_PERCENTAGE * len(target_uniqs))
             test_len = len(TESTING_PERCENTAGE * len(target_uniqs))
 
-            print('splitting data into train and test')
+            print('splitting data into train and test ...')
             splitter = (
                 if self.split = 'Train':  
                     np.in1d(target_names, target_uniqs[:train_len])
-                elif self.split = 'Validate':  
+                else if self.split = 'Validate':  
                     np.in1d(target_names, target_uniqs[train_len:-test_len])
                 else:
                     np.in1d(target_names, target_uniqs[test_len:])
@@ -140,7 +123,7 @@ class ChairsDataset(data.Dataset):
         text = [d[-1] for d in data]
     
         if vocab is None:
-            print('building vocab.')
+            print('building vocab ...')
             self.vocab = self.build_vocab(text)
         else:
             self.vocab = vocab
@@ -160,16 +143,13 @@ class ChairsDataset(data.Dataset):
 
         self.inputs, self.targets, self.lengths, self.positions, self.max_length \
             = self.process_texts(text)
-
         self.image_transform = image_transform
-
-        print(self.vocab)
 
     def build_vocab(self, texts):
         w2c = defaultdict(int)
         i2w, w2i = {}, {}
         for text in texts:
-            tokens = preprocess_text(text)
+            tokens = preprocess_text_chairs(text)
             for token in tokens:
                 w2c[token] += 1
         indexCount = 0
@@ -263,7 +243,7 @@ class ChairsDataset(data.Dataset):
 
         return targets, inputs, length
 
-class Chairs2k_ReferenceGame(data.Dataset):
+class Chairs_ReferenceGame(data.Dataset):
     def __init__(self, vocab=None, train=True, context_condition='all', 
                  split_mode='easy', image_size=32, image_transform=None):
         super(Chairs2k_ReferenceGame, self).__init__()
@@ -347,7 +327,7 @@ class Chairs2k_ReferenceGame(data.Dataset):
         text = [d[-1] for d in data]
     
         if vocab is None:
-            print('building vocab.')
+            print('building vocab ...')
             self.vocab = self.build_vocab(text)
         else:
             self.vocab = vocab
@@ -376,7 +356,7 @@ class Chairs2k_ReferenceGame(data.Dataset):
         w2c = defaultdict(int)
         i2w, w2i = {}, {}
         for text in texts:
-            tokens = preprocess_text(text)
+            tokens = preprocess_text_chairs(text)
             for token in tokens:
                 w2c[token] += 1
         indexCount = 0
@@ -396,10 +376,8 @@ class Chairs2k_ReferenceGame(data.Dataset):
 
         vocab = {'i2w': i2w, 'w2i': w2i}
 
-        # print(i2w)
         print("total number of words used at least twice: %d" % len(w2i))
         print("total number of different words: %d" % len(w2c.keys()))
-        print("max number of word usage: %d" % max(w2c.values()))
         return vocab
 
     def clean_data(self, data, names):
@@ -501,9 +479,25 @@ class Chairs2k_ReferenceGame(data.Dataset):
         inputs = torch.from_numpy(inputs).long()
         targets = torch.from_numpy(targets).long()
 
-        return chair_a, chair_b, chair_c, targets, inputs, length, label
+        return chair_a, chair_b, chair_c, targets, inputs, length
 
-def preprocess_text(text):
+class WeakSup_Chairs_Reference(ChairsDataset):
+    def __init__(self, data_dir, vocab=None, 
+                 transform=None, supervision_level=1.0):
+        super(WeakSup_Chairs2k_Numpy, self).__init__(
+            data_dir, vocab=vocab, train=True, image_transform=transform)
+        
+        self.random_state = np.random.RandomState(18192)
+        n = len(self.inputs)
+        supervision = self.random_state.binomial(1, supervision_level, size=n)
+        supervision = supervision.astype(np.bool)
+        self.chair_id = list(np.array(self.chair_id)[supervision])
+        self.inputs = self.inputs[supervision]
+        self.targets = self.targets[supervision]
+        self.lengths = self.lengths[supervision]
+        self.positions = self.positions[supervision]
+
+def preprocess_text_chairs(text):
     text = text.lower() 
     tokens = word_tokenize(text)
     i = 0
@@ -571,3 +565,6 @@ def preprocess_text(text):
     while '' in tokens:
         tokens.remove('')
     return tokens
+
+
+
