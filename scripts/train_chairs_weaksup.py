@@ -49,7 +49,7 @@ if __name__ == '__main__':
 
         loss_meter = AverageMeter()
         pbar = tqdm(total=len(train_loader))
-        for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len) in enumerate(train_loader):
+        for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_inp, x_len) in enumerate(train_loader):
             batch_size = x_inp.size(0) 
             tgt_chair = tgt_chair.to(device).float()
             d1_chair = d1_chair.to(device).float()
@@ -87,7 +87,7 @@ if __name__ == '__main__':
             loss_meter = AverageMeter()
 
             pbar = tqdm(total=len(test_loader))
-            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len) in enumerate(test_loader):
+            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_inp, x_len) in enumerate(test_loader):
                 batch_size = x_inp.size(0) 
                 tgt_chair = tgt_chair.to(device).float()
                 d1_chair = d1_chair.to(device).float()
@@ -102,7 +102,7 @@ if __name__ == '__main__':
 
                 # loss between actual and predicted rgb: cross entropy
                 loss = F.cross_entropy(torch.cat([tgt_score,d1_score,d2_score], 1), torch.LongTensor(np.zeros(batch_size)).to(device))
-                loss_meter.update(loss.item(), batch_size)  
+                loss_meter.update(loss.item(), batch_size)
 
                 pbar.update()
             pbar.close()
@@ -129,19 +129,20 @@ if __name__ == '__main__':
         device = torch.device('cuda' if args.cuda else 'cpu')
 
         # Define training dataset & build vocab
-        train_dataset = Weaksup_Chairs_Reference(supervision_level=args.sup_lvl, split_mode='hard' if args.hard else 'easy')
+        train_dataset = Weaksup_Chairs_Reference(supervision_level=args.sup_lvl, split='Train', hard=args.hard)
         train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
 
         # Define test dataset
-        test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Validation', split_mode='hard' if args.hard else 'easy')
+        test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Validation', hard=args.hard)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
         # Define model
-        txt_img_comp = TextImageCompatibility()
+        txt_img_comp = TextImageCompatibility(vocab_size)
         optimizer = torch.optim.Adam(txt_img_comp.parameters(), lr=args.lr)
+        txt_img_comp.to(device)
         
         best_loss = float('inf')
         track_loss = np.zeros((args.epochs, 2))

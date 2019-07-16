@@ -10,7 +10,7 @@ from torchvision import transforms
 import torch.nn.utils.rnn as rnn_utils
 
 class TextImageCompatibility(nn.Module):
-    def __init__(self, img_size=32, channel=3, embedding_dim=64, hidden_dim=256, n_filters=64):
+    def __init__(self, vocab_size, img_size=32, channels=3, embedding_dim=64, hidden_dim=256, n_filters=64):
         super(TextImageCompatibility, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.embedding_dim = embedding_dim
@@ -27,7 +27,7 @@ class TextImageCompatibility(nn.Module):
             nn.ReLU(),
             nn.Conv2d(n_filters * 2, n_filters * 4, 2, 2, padding=0))
         cout = gen_32_conv_output_dim(img_size)
-        self.fc = nn.Linear(n_filters * 4 * cout**2, hidden_dim)
+        self.fc = nn.Linear(n_filters * 4 * cout**2, hidden_dim // 2)
         self.cout = cout
         self.n_filters = n_filters
         self.sequential = nn.Sequential(
