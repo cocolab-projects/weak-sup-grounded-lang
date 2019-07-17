@@ -45,6 +45,8 @@ if __name__ == '__main__':
                         help='lambda argument for text loss')
     parser.add_argument('--beta', type=float, default=1,
                         help='lambda argument for rgb loss')
+    parser.add_argument('--weaksup', action='store_true',
+                        help='whether unpaired datasets are trained')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_iter', type=int, default = 1,
                         help='number of iterations for this setting [default: 1]')
@@ -59,6 +61,69 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
 
     def train(epoch):
+        """Function: train
+        Args:
+            param1 (int) epoch: training epoch
+        Returns:
+            (float): training loss over epoch
+        """
+        vae_emb.train()
+        vae_rgb_enc.train()
+        vae_txt_enc.train()
+        vae_mult_enc.train()
+        vae_rgb_dec.train()
+        vae_txt_dec.train()
+
+        loss_meter = AverageMeter()
+        pbar = tqdm(total=len(train_loader))
+        for batch_idx, (y_rgb, x_src, x_tgt, x_len) in enumerate(train_loader):
+            batch_size = x_src.size(0) 
+            y_rgb = y_rgb.to(device).float()
+            x_src = x_src.to(device)
+            x_tgt = x_tgt.to(device)
+            x_len = x_len.to(device)
+
+            # Encode to |z|
+            z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
+            z_y_mu, z_y_logvar = vae_rgb_enc(y_rgb)
+            z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_src, x_len)
+
+            # sample via reparametrization
+            z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
+            z_sample_y = _reparameterize(z_y_mu, z_y_logvar)
+            z_sample_xy = _reparameterize(z_xy_mu, z_xy_logvar)
+
+            # "predictions"
+            y_mu_z_y = vae_rgb_dec(z_sample_y)
+            y_mu_z_xy = vae_rgb_dec(z_sample_xy)
+            x_logit_z_x = vae_txt_dec(z_sample_x, x_src, x_len)
+            x_logit_z_xy = vae_txt_dec(z_sample_xy, x_src, x_len)
+
+            out = {'z_x_mu': z_x_mu, 'z_x_logvar': z_x_logvar,
+                    'z_y_mu': z_y_mu, 'z_y_logvar': z_y_logvar,
+                    'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
+                    'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
+                    'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
+                    'y': y_rgb, 'x': x_tgt, 'pad_index': pad_index}
+
+            # compute loss
+            loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta)
+
+            loss_meter.update(loss.item(), batch_size)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            pbar.set_postfix({'loss': loss_meter.avg})
+            pbar.update()
+        pbar.close()
+            
+        if epoch % 10 == 0:
+            print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
+        
+        return loss_meter.avg
+
+    def train_weakly_supervised(epoch):
         """Function: train
         Args:
             param1 (int) epoch: training epoch
@@ -210,6 +275,11 @@ if __name__ == '__main__':
         # Define test dataset
         test_dataset = ColorDataset(vocab=vocab, split='Validation', hard=args.hard)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
+
+        if args.weaksup:
+            unpaired_dataset = ColorDataset(vocab=vocab, split='Train', hard=args.hard)
+            unpaired_txt_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
+            unpaired_img_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
 
         # Define latent dimension |z_dim|
         z_dim = args.z_dim

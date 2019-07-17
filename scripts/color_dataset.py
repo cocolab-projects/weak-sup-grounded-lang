@@ -24,7 +24,7 @@ from nltk.tokenize import RegexpTokenizer
 from collections import defaultdict
 
 FILE_DIR = os.path.realpath(os.path.dirname(__file__))
-RAW_DIR = os.path.realpath(os.path.join(FILE_DIR, '../datasets/'))
+RAW_DIR = os.path.realpath(os.path.join(FILE_DIR, '/mnt/fs5/hokysung/datasets/'))
 
 SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'

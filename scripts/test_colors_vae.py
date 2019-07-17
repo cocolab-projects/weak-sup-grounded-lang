@@ -18,7 +18,7 @@ SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
 PAD_TOKEN = '<pad>'
 UNK_TOKEN = '<unk>'
-N_SAMPLE = 80
+N_SAMPLE = 1000
 
 if __name__ == '__main__':
     import argparse
@@ -200,13 +200,18 @@ if __name__ == '__main__':
                         if (sample_correct and not mean_correct) or (mean_correct and not sample_correct):
                             diverge_count += 1
                             diverge = True
-                        if (i % 50 == 0):
+                        if (i % 10 == 0):
                             match_text = get_text(vocab['i2w'], x_tgt[i], x_len[i])
                             print("\ncolor: {} <==> text: {} == {}".format(y_rgb[i], match_text, x_tgt[i]))
                             print("predicted rgb based on conditional: {}".format(pred_rgb_cond))
                             print("mean-based choice correct? {}".format('T' if mean_correct else 'F'))
                             print("sample-based choice correct? {}".format('T' if sample_correct else 'F'))
                             print("conditional distribution-based choice correct? {}".format('T' if cond_correct else 'F'))
+
+                            print("\ncurrent mean-based choice accuracy: {}".format(mean_correct_count / total_count))
+                            print("current sample-based choice accuracy: {}".format(sample_correct_count / total_count))
+                            print("p_x_y1_sampled: {}, p_x_y2_sampled: {}, p_x_y3_sampled: {}".format(p_x_y1_sampled, p_x_y2_sampled, p_x_y3_sampled))
+                            print("p_x_y1_mean: {}, p_x_y2_mean: {}, p_x_y3_mean: {}".format(p_x_y1_mean, p_x_y2_mean, p_x_y3_mean))
                     pbar.update()
 
             mean_acc = mean_correct_count / float(total_count) * 100
