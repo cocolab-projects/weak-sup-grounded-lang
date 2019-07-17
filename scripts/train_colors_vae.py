@@ -45,6 +45,8 @@ if __name__ == '__main__':
                         help='lambda argument for text loss')
     parser.add_argument('--beta', type=float, default=1,
                         help='lambda argument for rgb loss')
+    parser.add_argument('--weaksup', action='store_true',
+                        help='whether unpaired datasets are trained')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_iter', type=int, default = 1,
                         help='number of iterations for this setting [default: 1]')
@@ -121,7 +123,7 @@ if __name__ == '__main__':
         
         return loss_meter.avg
 
-    def train_unpaired(epoch):
+    def train_weakly_supervised(epoch):
         """Function: train
         Args:
             param1 (int) epoch: training epoch
@@ -273,6 +275,11 @@ if __name__ == '__main__':
         # Define test dataset
         test_dataset = ColorDataset(vocab=vocab, split='Validation', hard=args.hard)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
+
+        if args.weaksup:
+            unpaired_dataset = ColorDataset(vocab=vocab, split='Train', hard=args.hard)
+            unpaired_txt_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
+            unpaired_img_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
 
         # Define latent dimension |z_dim|
         z_dim = args.z_dim
