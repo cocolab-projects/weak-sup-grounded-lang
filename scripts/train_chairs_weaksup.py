@@ -34,7 +34,8 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_iter', type=int, default = 3,
                         help='number of iterations for this setting [default: 1]')
-    parser.add_argument('--hard', action='store_true', help='whether the dataset is to be easy')
+    parser.add_argument('--context_condition', type=str, default='all',
+                        help='whether the dataset is to include all data')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
 
@@ -129,14 +130,14 @@ if __name__ == '__main__':
         device = torch.device('cuda' if args.cuda else 'cpu')
 
         # Define training dataset & build vocab
-        train_dataset = Weaksup_Chairs_Reference(supervision_level=args.sup_lvl, split='Train', hard=args.hard)
+        train_dataset = Weaksup_Chairs_Reference(supervision_level=args.sup_lvl, split='Train', context_condition=args.context_condition)
         train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
 
         # Define test dataset
-        test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Validation', hard=args.hard)
+        test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
         # Define model

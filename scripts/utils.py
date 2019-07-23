@@ -151,7 +151,7 @@ def _log_mean_exp(x, dim=1):
     return m + torch.log(torch.mean(torch.exp(x - m),
                          dim=dim, keepdim=True))
 
-def score_txt_logits(text_seq, text_logits, ignore_index):
+def score_txt_logits(text_seq, text_logits, text_len, ignore_index):
     n, s, v = text_logits.size()
     text_logits_2d = text_logits.contiguous().view(n * s, v)
     text_seq_2d = text_seq[:, :s].contiguous().view(n * s)
@@ -160,6 +160,7 @@ def score_txt_logits(text_seq, text_logits, ignore_index):
     loss = loss.view(n, s)
     loss = torch.sum(loss, dim=1)
     return loss
+    # return loss / text_len.float()
 
 def bernoulli_log_pdf(x, mu):
     mu = torch.clamp(mu, 1e-7, 1.-1e-7)
@@ -176,27 +177,27 @@ def isotropic_gaussian_log_pdf(x):
     return gaussian_log_pdf(x, mu, logvar)
 
 def loss_multimodal(out, batch_size, alpha=1, beta=1, gamma=1):
-    log_p_x_given_z_x = score_txt_logits(out['x'], out['x_logit_z_x'], out['pad_index'])
+    batch_size = out['y'].size(0)
+
+    log_p_x_given_z_x = score_txt_logits(out['x'], out['x_logit_z_x'], out['x_len'], out['pad_index'])
     kl_q_z_given_x_and_p_z = -0.5 * (1 + out['z_x_logvar'] - out['z_x_mu'].pow(2) - out['z_x_logvar'].exp())
     kl_q_z_given_x_and_p_z = torch.sum(kl_q_z_given_x_and_p_z, dim=1)
     elbo_x = alpha * -log_p_x_given_z_x + gamma * kl_q_z_given_x_and_p_z
     elbo_x = torch.mean(elbo_x)
 
-    # log_p_y_given_z_y = torch.mean(torch.pow((out['y'] - out['y_mu_z_y']), 2), dim=1)
-    log_p_y_given_z_y = bernoulli_log_pdf(out['y'], out['y_mu_z_y'])
+    log_p_y_given_z_y = bernoulli_log_pdf(out['y'].view(batch_size, -1), out['y_mu_z_y'].view(batch_size, -1))
     kl_q_z_given_y_and_p_z = -0.5 * (1 + out['z_y_logvar'] - out['z_y_mu'].pow(2) - out['z_y_logvar'].exp())
     kl_q_z_given_y_and_p_z = torch.sum(kl_q_z_given_y_and_p_z, dim=1)
     elbo_y = beta * -log_p_y_given_z_y + gamma * kl_q_z_given_y_and_p_z
     elbo_y = torch.mean(elbo_y)
 
-    log_p_x_given_z_xy = score_txt_logits(out['x'], out['x_logit_z_xy'], out['pad_index'])
+    log_p_x_given_z_xy = score_txt_logits(out['x'], out['x_logit_z_xy'], out['x_len'], out['pad_index'])
     kl_q_z_given_xy_q_z_given_y = _kl_normal_normal(out['z_xy_mu'], out['z_y_mu'], out['z_xy_logvar'], out['z_y_logvar'])
     kl_q_z_given_xy_q_z_given_y = torch.sum(kl_q_z_given_xy_q_z_given_y, dim=1)
     elbo_x_given_y = alpha * -log_p_x_given_z_xy + gamma * kl_q_z_given_xy_q_z_given_y
     elbo_x_given_y = torch.mean(elbo_x_given_y)
 
-    # log_p_y_given_z_xy = torch.mean(torch.pow((out['y'] - out['y_mu_z_xy']), 2), dim=1)
-    log_p_y_given_z_xy = bernoulli_log_pdf(out['y'], out['y_mu_z_xy'])
+    log_p_y_given_z_xy = bernoulli_log_pdf(out['y'].view(batch_size, -1), out['y_mu_z_xy'].view(batch_size, -1))
     kl_q_z_given_xy_q_z_given_x = _kl_normal_normal(out['z_xy_mu'], out['z_x_mu'], out['z_xy_logvar'], out['z_x_logvar'])
     kl_q_z_given_xy_q_z_given_x = torch.sum(kl_q_z_given_xy_q_z_given_x, dim=1)
     elbo_y_given_x = beta * -log_p_y_given_z_xy + gamma * kl_q_z_given_xy_q_z_given_x
@@ -205,23 +206,39 @@ def loss_multimodal(out, batch_size, alpha=1, beta=1, gamma=1):
     loss = elbo_x + elbo_y + elbo_x_given_y + elbo_y_given_x
     return loss
 
-def get_image_text_joint_nll(y, y_mu_list, x_tgt, x_tgt_logits_list, z_list, z_mu, z_logvar, pad_index):
-    batch_size = y.size(0)    
+def get_image_text_joint_nll(y, y_mu_list, x_tgt, x_tgt_logits_list, x_len, z_list, z_mu, z_logvar, pad_index, verbose=False):
+    batch_size = y.size(0)
     N = len(x_tgt_logits_list)
     log_p_xy_list = []
 
-    y, x_tgt = y.unsqueeze(0).repeat(N, 1), x_tgt.unsqueeze(0).repeat(N, 1)
+    extended_dim = [N] + [1] * y.dim()
+    y, x_tgt = y.unsqueeze(0).repeat(extended_dim), x_tgt.unsqueeze(0).repeat(N, 1)
     z_mu, z_logvar = z_mu.unsqueeze(0).repeat(N, 1), z_logvar.unsqueeze(0).repeat(N, 1)
 
-    log_p_x_given_z = score_txt_logits(x_tgt, x_tgt_logits_list, pad_index)
-    log_p_y_given_z = bernoulli_log_pdf(y.float(), y_mu_list)
-    log_q_z_given_xy = torch.mean(gaussian_log_pdf(z_list, z_mu, z_logvar), dim=1)
-    log_p_z = torch.mean(isotropic_gaussian_log_pdf(z_list), dim=1)
+    log_p_x_given_z = score_txt_logits(x_tgt, x_tgt_logits_list, x_len, pad_index)
+    log_p_y_given_z = bernoulli_log_pdf(y.float().view(N, -1), y_mu_list.view(N, -1))
+
+    ## *** should be torch.sum since this is log of products, but it is summed over |z_dim| and thus magnitude is very large ***
+    ## this trivializes the role of p(x|z) and p(y|z), so to adjust I use torch.mean, effectively dividing by 100
+    log_q_z_given_xy = torch.sum(gaussian_log_pdf(z_list, z_mu, z_logvar), dim=1)
+    log_p_z = torch.sum(isotropic_gaussian_log_pdf(z_list), dim=1)
+    # log_q_z_given_xy = torch.mean(gaussian_log_pdf(z_list, z_mu, z_logvar), dim=1)
+    # log_p_z = torch.mean(isotropic_gaussian_log_pdf(z_list), dim=1)   
+
     log_p_xy = log_p_x_given_z + log_p_y_given_z + log_p_z - log_q_z_given_xy
-    log_p_xy = log_p_xy.cpu()  # cast to CPU so we dont blow up
+    log_p_xy = log_p_xy.cpu()  # cast to CPU so we don't blow up
 
     nll = _log_mean_exp(log_p_xy.unsqueeze(0), dim=1)
     nll = -torch.mean(nll)
+
+    if verbose and N == 1:
+        print("x_len: {}".format(x_len))
+        print("log_p_x_given_z: {} for x_tgt: {}".format(log_p_x_given_z, x_tgt))
+        print("log_p_y_given_z: {}".format(log_p_y_given_z))
+        print("log_p_z: {}".format(log_p_z))
+        print("log_q_z_given_xy: {}".format(log_q_z_given_xy))
+        print()
+        # breakpoint()
 
     return nll
 

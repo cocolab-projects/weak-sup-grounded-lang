@@ -2,6 +2,7 @@ import os
 import sys
 import numpy as np
 import collections
+import pickle
 from tqdm import tqdm
 
 import torch 
@@ -19,7 +20,7 @@ SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
 PAD_TOKEN = '<pad>'
 UNK_TOKEN = '<unk>'
-N_SAMPLE = 1000
+N_SAMPLE = 150
 
 if __name__ == '__main__':
     import argparse
@@ -123,19 +124,6 @@ if __name__ == '__main__':
 
         return get_image_text_joint_nll(y_rgb, y_mu_z_xy, x_tgt, x_tgt_logits, x_len, z_xy_mu.unsqueeze(0), z_xy_mu, z_xy_logvar, pad_index, verbose)
 
-    def get_sampled_px_z_py_given_z(y_rgb, x_src, x_tgt, x_len):
-        z_samples = torch.randn(N_SAMPLE, train_args.z_dim).to(device)
-
-
-    def get_sampled_conditional_choice(y_1, y_2, y_3, z_x_mu, z_x_logvar):
-        z_samples = torch.randn(N_SAMPLE, train_args.z_dim).to(device) * torch.exp(0.5 * z_x_logvar) + z_x_mu
-
-        pred_rgb_cond = vae_rgb_dec(z_samples)
-        diff_tgt = torch.sum(torch.pow(pred_rgb_cond - y_1.unsqueeze(0).repeat(N_SAMPLE, 1), 2), dim=1)
-        diff_d1 = torch.sum(torch.pow(pred_rgb_cond - y_2.unsqueeze(0).repeat(N_SAMPLE, 1), 2), dim=1)
-        diff_d2 = torch.sum(torch.pow(pred_rgb_cond - y_3.unsqueeze(0).repeat(N_SAMPLE, 1), 2), dim=1)
-        return pred_rgb_cond, 1 if (diff_tgt < diff_d1 and diff_tgt < diff_d2) else (2 if diff_d1 < diff_d2 else 3)
-
     def get_conditional_choice(y_1, y_2, y_3, z_mu):
         pred_rgb_cond = vae_rgb_dec(z_mu)
         diff_tgt = torch.mean(torch.pow(pred_rgb_cond - y_1, 2))
@@ -167,7 +155,11 @@ if __name__ == '__main__':
             loss_meter = AverageMeter()
 
             total_count = 0
+            total_count_dict = collections.defaultdict(int)
+            mean_correct_count_dict = collections.defaultdict(int)
             mean_correct_count, sample_correct_count, cond_correct_count, diverge_count = 0, 0, 0, 0
+            pz_correct_count = 0
+            pz_dict = collections.defaultdict(int)
 
             with tqdm(total=len(ref_loader)) as pbar:
                 for batch_idx, (y_rgb, d1_rgb, d2_rgb, x_src, x_tgt, x_len) in enumerate(ref_loader):
@@ -181,69 +173,93 @@ if __name__ == '__main__':
 
                     # Encode to |z|
                     z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
+                    z_y1_mu, z_y1_logvar = vae_rgb_enc(y_rgb)
+                    z_y2_mu, z_y2_logvar = vae_rgb_enc(d1_rgb)
+                    z_y3_mu, z_y3_logvar = vae_rgb_enc(d2_rgb)
                     z_xy_mu_tgt, z_xy_logvar_tgt = vae_mult_enc(y_rgb, x_src, x_len)
                     z_xy_mu_d1, z_xy_logvar_d1 = vae_mult_enc(d1_rgb, x_src, x_len)
                     z_xy_mu_d2, z_xy_logvar_d2 = vae_mult_enc(d2_rgb, x_src, x_len)
 
                     # check accuracy for each datapoint via mean, sampling, conditional
                     for i in range(batch_size):
-                        verbose = i % 50 == 0
+                        verbose = i % 100 == 0
+                        # verbose = False
                         total_count += 1
+                        total_count_dict[x_len[i].item()] += 1
 
+                        # # sample-based estimator of joint probabilities based on z ~ q(z|x,y)
+                        # p_x_y1_sampled = get_sampled_joint_prob(y_rgb[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i])
+                        # p_x_y2_sampled = get_sampled_joint_prob(d1_rgb[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i])
+                        # p_x_y3_sampled = get_sampled_joint_prob(d2_rgb[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i])
+
+                        if verbose: print("\n========= NEW IMAGE TEXT DATAPOINT ==========")
                         # mean-based estimator of joint probabilities based on z ~ q(z|x,y)
-                        p_x_y1_sampled = get_sampled_joint_prob(y_rgb[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i])
-                        p_x_y2_sampled = get_sampled_joint_prob(d1_rgb[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i])
-                        p_x_y3_sampled = get_sampled_joint_prob(d2_rgb[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i])
-
-                        # sample-based estimator of joint probabilities based on z ~ q(z|x,y)
                         p_x_y1_mean = get_mean_joint_prob(y_rgb[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i], verbose=verbose)
                         p_x_y2_mean = get_mean_joint_prob(d1_rgb[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i], verbose=verbose)
                         p_x_y3_mean = get_mean_joint_prob(d2_rgb[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i], verbose=verbose)
+
+                        # p(z)-based estimator of joint probabilities based on z ~ q(z|x,y)
+                        p_z_x_y1 = torch.sum(isotropic_gaussian_log_pdf(z_xy_mu_tgt[i].unsqueeze(0)), dim=1)
+                        p_z_x_y2 = torch.sum(isotropic_gaussian_log_pdf(z_xy_mu_d1[i].unsqueeze(0)), dim=1)
+                        p_z_x_y3 = torch.sum(isotropic_gaussian_log_pdf(z_xy_mu_d2[i].unsqueeze(0)), dim=1)
 
                         # choice based on conditional distribution z ~ q(z|x)
                         pred_rgb_cond, cond_choice = get_conditional_choice(y_rgb[i], d1_rgb[i], d2_rgb[i], z_x_mu[i])
                         
                         mean_correct, sample_correct, cond_correct, diverge = False, False, False, False
+                        pz_correct = False
+                        pz_dict[np.argmin(np.array([p_z_x_y1, p_z_x_y2, p_z_x_y3]))] += 1
 
-                        if p_x_y1_mean < p_x_y2_mean and p_x_y1_mean < p_x_y3_mean:
+                        mean_choice = np.argmin(np.array([p_x_y1_mean, p_x_y2_mean, p_x_y3_mean]))
+                        pz_choice = np.argmin(np.array([p_z_x_y1, p_z_x_y2, p_z_x_y3]))
+                        if pz_choice == 0:
+                            pz_correct_count += 1
+                            pz_correct = True
+                        if mean_choice == 0:
                             mean_correct_count += 1
                             mean_correct = True
-                        if p_x_y1_sampled < p_x_y2_sampled and p_x_y1_sampled < p_x_y3_sampled:
-                            sample_correct_count += 1
-                            sample_correct = True
+                            mean_correct_count_dict[x_len[i].item()] += 1
+                        # if p_x_y1_sampled < p_x_y2_sampled and p_x_y1_sampled < p_x_y3_sampled:
+                        #     sample_correct_count += 1
+                        #     sample_correct = True
                         if cond_choice == 1:
                             cond_correct_count += 1
                             cond_correct = True
-                        if (sample_correct and not mean_correct) or (mean_correct and not sample_correct):
+                        if pz_choice == 0 and mean_choice != 0:
                             diverge_count += 1
                             diverge = True
                         if verbose:
                             match_text = get_text(vocab['i2w'], x_tgt[i], x_len[i])
-                            print("================== ==================")
-                            print("\ncolor: {} <==> text: {} == {}".format(y_rgb[i], match_text, x_tgt[i]))
-                            
-                            print("\npredicted rgb based on conditional: {}".format(pred_rgb_cond))
+                            print("color: {} <==> text: {} == {}".format(y_rgb[i], match_text, x_tgt[i][:x_len[i]]))
+                            print("predicted rgb based on conditional: {}".format(pred_rgb_cond))
                             print("mean-based choice correct? {}".format('T' if mean_correct else 'F'))
-                            print("sample-based choice correct? {}".format('T' if sample_correct else 'F'))
-                            print("conditional distribution-based choice correct? {}".format('T' if cond_correct else 'F'))
-                            print("p_x_y1_sampled: {}, p_x_y2_sampled: {}, p_x_y3_sampled: {}".format(p_x_y1_sampled, p_x_y2_sampled, p_x_y3_sampled))
+                            # print("sample-based choice correct? {}".format('T' if sample_correct else 'F'))
+                            # print("conditional distribution-based choice correct? {}".format('T' if cond_correct else 'F'))
+                            # print("p_x_y1_sampled: {}, p_x_y2_sampled: {}, p_x_y3_sampled: {}".format(p_x_y1_sampled, p_x_y2_sampled, p_x_y3_sampled))
                             print("p_x_y1_mean: {}, p_x_y2_mean: {}, p_x_y3_mean: {}".format(p_x_y1_mean, p_x_y2_mean, p_x_y3_mean))
+                            print("p_z_x_y1: {}, p_z_x_y2: {}, p_z_x_y3: {}".format(p_z_x_y1, p_z_x_y2, p_z_x_y3))
                             
-                            print("\n total count currently: {}".format(total_count))
+                            print("\npz argmax info: {}".format(pz_dict))
                             print("current mean-based choice accuracy: {}".format(mean_correct_count / total_count))
-                            print("current sample-based choice accuracy: {}".format(sample_correct_count / total_count))
-                            
+                            print("current pz-based choice accuracy: {}".format(pz_correct_count / total_count))
+                            print("current diverge rate: {}".format(diverge_count / total_count))
+                            print("current mean histogram: {}".format([(i, total_count_dict[i], mean_correct_count_dict[i] / total_count_dict[i]) \
+                                                                                    for i in range(2, 11) if total_count_dict[i] != 0]))
+                            print("================END OF IMAGE TEXT DATAPOINT ====================")
                     pbar.update()
 
+            pz_acc = pz_correct_count / float(total_count) * 100
             mean_acc = mean_correct_count / float(total_count) * 100
-            sample_acc = sample_correct_count / float(total_count) * 100
+            # sample_acc = sample_correct_count / float(total_count) * 100
             cond_acc = cond_correct_count / float(total_count) * 100
             diverge_rate = diverge_count / float(total_count) * 100
-            print('====> Final Sample-based Accuracy: {}/{} = {}%'.format(sample_correct_count, total_count, sample_acc))
+            print('====> Final p(z)-based Accuracy: {}/{} = {}%'.format(pz_correct_count, total_count, pz_acc))
             print('====> Final Mean-based Accuracy: {}/{} = {}%'.format(mean_correct_count, total_count, mean_acc))
             print('====> Final Conditional Accuracy: {}/{} = {}%'.format(cond_correct_count, total_count, cond_acc))
             print('====> Final Divergence Rate: {}/{} = {}%\n'.format(diverge_count, total_count, diverge_rate))
-        return mean_acc, sample_acc, cond_acc, diverge_rate
+            print('----> total_count_dict: {}'.format(total_count_dict))
+            print('----> mean_correct_count_dict: {}'.format(mean_correct_count_dict))
+        return mean_acc, pz_acc, cond_acc, pz_dict, mean_correct_count_dict, total_count_dict
 
     def load_checkpoint(folder='./', filename='model_best'):
         print("\nloading checkpoint file: {}.pth.tar ...\n".format(filename)) 
@@ -316,8 +332,9 @@ if __name__ == '__main__':
 
     print("=== begin testing ===")
 
-    losses, mean_accuracies, sample_accuracies, cond_accuracies, diverge_rates, best_epochs = [], [], [], [], [], []
+    losses, mean_accuracies, pz_accuracies, cond_accuracies, pz_dicts, best_epochs = [], [], [], [], [], []
     for iter_num in range(1, args.num_iter + 1):
+
         filename = 'checkpoint_vae_{}_{}_alpha={}_beta={}_best'.format(args.sup_lvl,
                                                                         iter_num,
                                                                         args.alpha,
@@ -339,30 +356,39 @@ if __name__ == '__main__':
         # sanity_check()
 
         # compute test loss & reference game accuracy
-        losses.append(test_loss())
-        mean_acc, sample_acc, cond_acc, diverge_rate = test_refgame_accuracy()
         
-        diverge_rates.append(diverge_rate)
+        mean_acc, pz_acc, cond_acc, pz_dict, mean_correct_count_dict, total_count_dict = test_refgame_accuracy()
         mean_accuracies.append(mean_acc)
-        sample_accuracies.append(sample_acc)
+        pz_accuracies.append(pz_acc)
         cond_accuracies.append(cond_acc)
         best_epochs.append(epoch)
 
     # losses = np.array(losses)
     mean_accuracies = np.array(mean_accuracies)
-    sample_accuracies = np.array(sample_accuracies)
+    pz_accuracies = np.array(pz_accuracies)
     cond_accuracies = np.array(cond_accuracies)
-    diverge_rates = np.array(diverge_rates)
 
+    accuracy_by_len_dict = {i:(total_count_dict[i], mean_correct_count_dict[i]) for i in range(2, 11) if total_count_dict[i] != 0}
     # save files as np arrays
-    print("saving file to {} ...".format(args.out_dir))
-    np.save(os.path.join(args.out_dir, 'sample_accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), sample_accuracies)
+    print("\nsaving file to {} ...".format(args.out_dir))
+    f_pz = open(os.path.join(args.out_dir, 'pz_dict_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), "wb")
+    pickle.dump(pz_dict, f_pz)
+    f_pz.close()
+
+    f_bylen = open(os.path.join(args.out_dir, 'mean_correct_count_dict_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), "wb")
+    pickle.dump(accuracy_by_len_dict, f_bylen)
+    f_bylen.close()
+
+    np.save(os.path.join(args.out_dir, 'pz_accs_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), pz_accuracies)
     np.save(os.path.join(args.out_dir, 'mean_accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), mean_accuracies)
     np.save(os.path.join(args.out_dir, 'cond_accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), cond_accuracies)
-    np.save(os.path.join(args.out_dir, 'divergence_rates_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), diverge_rates)
     print("... saving complete.")
 
+    print("\nmean_accuracies: {}".format(mean_accuracies))
+    print("pz_accuracies: {}".format(pz_accuracies))
+    print("histogram: {} ".format([(i, total_count_dict[i], mean_correct_count_dict[i] / total_count_dict[i]) for i in range(2, 11) if total_count_dict[i] != 0]))
+    print("pz_dict: {}".format(pz_dict))
+
     print("\n======> Best epochs: {}".format(best_epochs))
-    print("\n======> Average loss: {:6f}".format(np.mean(losses)))
     print("======> Average mean-based accuracy: {:4f}".format(np.mean(mean_accuracies)))
 

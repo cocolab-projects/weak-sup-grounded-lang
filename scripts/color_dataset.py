@@ -36,13 +36,14 @@ MIN_USED = 2
 MAX_LEN = 10
 
 class ColorDataset(data.Dataset):
-    def __init__(self, vocab=None, split='Train', hard=False):
+    def __init__(self, vocab=None, split='Train', context_condition='far'):
         with open(os.path.join(RAW_DIR, 'filteredCorpus.csv')) as fp:
             df = pd.read_csv(fp)
         df = df[df['outcome'] == True]
         df = df[df['role'] == 'speaker']
-        if not hard:
-            df = df[df['condition'] == 'far']
+        if context_condition != 'all':
+            assert context_condition in ['far', 'close', 'split']
+            df = df[df['condition'] == context_condition]
 
         self.texts = []
         self.rounds = []
@@ -157,8 +158,8 @@ class ColorDataset(data.Dataset):
         return self.rgb_targets[index], self.txt_sources[index], self.txt_targets[index], self.lengths[index]
 
 class WeakSup_ColorDataset(ColorDataset):
-    def __init__(self, vocab=None, supervision_level=1.0, hard=False):
-        super(WeakSup_ColorDataset, self).__init__(vocab=vocab, split='Train', hard=hard)
+    def __init__(self, vocab=None, supervision_level=1.0, context_condition='far'):
+        super(WeakSup_ColorDataset, self).__init__(vocab=vocab, split='Train', context_condition=context_condition)
         
         self.random_state = np.random.RandomState(18192)
         n = len(self.txt_sources)
@@ -170,14 +171,15 @@ class WeakSup_ColorDataset(ColorDataset):
         self.lengths = self.lengths[supervision]
 
 class Colors_ReferenceGame(data.Dataset):
-    def __init__(self, vocab, split='Test', hard=False):
+    def __init__(self, vocab, split='Test', context_condition='far'):
         with open(os.path.join(RAW_DIR, 'filteredCorpus.csv')) as fp:
             df = pd.read_csv(fp)
         # Only pick out data with true outcomes, far(=easy) conditions, and speaker text
         df = df[df['outcome'] == True]
         df = df[df['role'] == 'speaker']
-        if not hard:
-            df = df[df['condition'] == 'far']
+        if context_condition != 'all':
+            assert context_condition in ['far', 'close', 'split']
+            df = df[df['condition'] == context_condition]
         
         self.texts = []
         self.rounds = []
@@ -312,8 +314,8 @@ class Colors_ReferenceGame(data.Dataset):
         return self.rgb_targets[index], self.d1_RGBs[index], self.d2_RGBs[index], self.txt_sources[index], self.txt_targets[index], self.lengths[index]
 
 class WeakSup_ColorReference(Colors_ReferenceGame):
-    def __init__(self, vocab=None, supervision_level=1.0, hard=False):
-        super(WeakSup_ColorReference, self).__init__(vocab=vocab, split='Train', hard=hard)
+    def __init__(self, vocab=None, supervision_level=1.0, context_condition='far'):
+        super(WeakSup_ColorReference, self).__init__(vocab=vocab, split='Train', context_condition=context_condition)
         
         self.random_state = np.random.RandomState(18192)
         n = len(self.txt_sources)

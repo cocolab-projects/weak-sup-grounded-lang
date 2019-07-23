@@ -13,11 +13,11 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
-from color_dataset import (ColorDataset, WeakSup_ColorDataset)
+from chair_dataset import (Chairs_ReferenceGame, Weaksup_Chairs_Reference)
 
 from utils import (AverageMeter, save_checkpoint, _reparameterize, loss_multimodal)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
-                    ColorEncoder, ColorEncoder_Augmented, MultimodalEncoder, ColorDecoder)
+                    ImageEncoder, ImageTextEncoder, ImageDecoder)
 
 SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
@@ -50,7 +50,8 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_iter', type=int, default = 1,
                         help='number of iterations for this setting [default: 1]')
-    parser.add_argument('--context_condition', type=str, default='far', help='whether the dataset is to include all data')
+    parser.add_argument('--context_condition', type=str, default='all',
+                        help='whether the dataset is to include all data')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
 
@@ -68,25 +69,25 @@ if __name__ == '__main__':
             (float): training loss over epoch
         """
         vae_emb.train()
-        vae_rgb_enc.train()
+        vae_img_enc.train()
         vae_txt_enc.train()
         vae_mult_enc.train()
-        vae_rgb_dec.train()
+        vae_img_dec.train()
         vae_txt_dec.train()
 
         loss_meter = AverageMeter()
         pbar = tqdm(total=len(train_loader))
-        for batch_idx, (y_rgb, x_tgt, x_src, x_len)  in enumerate(train_loader):
+        for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len) in enumerate(train_loader):
             batch_size = x_src.size(0) 
-            y_rgb = y_rgb.to(device).float()
+            tgt_chair = tgt_chair.to(device).float()
             x_src = x_src.to(device)
             x_tgt = x_tgt.to(device)
             x_len = x_len.to(device)
 
             # Encode to |z|
             z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
-            z_y_mu, z_y_logvar = vae_rgb_enc(y_rgb)
-            z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_src, x_len)
+            z_y_mu, z_y_logvar = vae_img_enc(tgt_chair)
+            z_xy_mu, z_xy_logvar = vae_mult_enc(tgt_chair, x_src, x_len)
 
             # sample via reparametrization
             z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
@@ -94,8 +95,8 @@ if __name__ == '__main__':
             z_sample_xy = _reparameterize(z_xy_mu, z_xy_logvar)
 
             # "predictions"
-            y_mu_z_y = vae_rgb_dec(z_sample_y)
-            y_mu_z_xy = vae_rgb_dec(z_sample_xy)
+            y_mu_z_y = vae_img_dec(z_sample_y)
+            y_mu_z_xy = vae_img_dec(z_sample_xy)
             x_logit_z_x = vae_txt_dec(z_sample_x, x_src, x_len)
             x_logit_z_xy = vae_txt_dec(z_sample_xy, x_src, x_len)
 
@@ -104,7 +105,7 @@ if __name__ == '__main__':
                     'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
                     'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
                     'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                    'y': y_rgb, 'x': x_tgt,'x_len': x_len, 'pad_index': pad_index}
+                    'y': tgt_chair, 'x': x_tgt, 'x_len': x_len, 'pad_index': pad_index}
 
             # compute loss
             loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta)
@@ -131,71 +132,26 @@ if __name__ == '__main__':
             (float): training loss over epoch
         """
         vae_emb.train()
-        vae_rgb_enc.train()
+        vae_img_enc.train()
         vae_txt_enc.train()
         vae_mult_enc.train()
-        vae_rgb_dec.train()
+        vae_img_dec.train()
         vae_txt_dec.train()
 
-        train_xy_iterator = train_loader.__iter__()
-        train_x_iterator = unpaired_txt_loader.__iter__()
-        train_y_iterator = unpaired_img_loader.__iter__()
         loss_meter = AverageMeter()
-
         pbar = tqdm(total=len(train_loader))
-        for batch_i in range(len(train_y_iterator)):
-            try:
-                data_xy_args = next(train_xy_iterator)
-            except StopIteration:
-                train_xy_iterator = self.train_xy_loader.__iter__()
-                data_xy_args = next(train_xy_iterator)
 
-            try:
-                data_x_args = next(train_x_iterator)
-            except StopIteration:
-                train_x_iterator = self.train_x_loader.__iter__()
-                data_x_args = next(train_x_iterator)
-
-            try:
-                data_y_args = next(train_y_iterator)
-            except StopIteration:
-                train_y_iterator = self.train_y_loader.__iter__()
-                data_y_args = next(train_y_iterator)
-
-            batch_size = self._choose_batch_size(data_x_args[0].size(0), data_y_args[0].size(0),
-                                                 data_xy_args[0].size(0))
-            # cast elements to CUDA and keep only the batch_size so 
-            # sizes are all the same
-
-            for j in range(len(data_xy_args)):
-                data_xy_args[j] = data_xy_args[j][:batch_size]
-                data_xy_args[j] = data_xy_args[j].to(self.device)
-            
-            for j in range(len(data_x_args)):
-                data_x_args[j] = data_x_args[j][:batch_size]
-                data_x_args[j] = data_x_args[j].to(self.device)
-            
-            for j in range(len(data_y_args)):
-                data_y_args[j] = data_y_args[j][:batch_size]
-                data_y_args[j] = data_y_args[j].to(self.device)
-
-            output_xy_dict = self.forward(data_xy_args)
-            output_x_dict = self.forward(data_x_args)
-            output_y_dict = self.forward(data_y_args)
-
-        for batch_idx, (y_rgb, x_tgt, x_src, x_len) in enumerate(train_loader):
-            batch_size = x_src.size(0)
-            y_rgb = y_rgb.to(device).float()
+        for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len)  in enumerate(train_loader):
+            batch_size = x_src.size(0) 
+            tgt_chair = tgt_chair.to(device).float()
             x_src = x_src.to(device)
             x_tgt = x_tgt.to(device)
             x_len = x_len.to(device)
 
-
-
             # Encode to |z|
             z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
-            z_y_mu, z_y_logvar = vae_rgb_enc(y_rgb)
-            z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_src, x_len)
+            z_y_mu, z_y_logvar = vae_img_enc(tgt_chair)
+            z_xy_mu, z_xy_logvar = vae_mult_enc(tgt_chair, x_src, x_len)
 
             # sample via reparametrization
             z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
@@ -203,8 +159,8 @@ if __name__ == '__main__':
             z_sample_xy = _reparameterize(z_xy_mu, z_xy_logvar)
 
             # "predictions"
-            y_mu_z_y = vae_rgb_dec(z_sample_y)
-            y_mu_z_xy = vae_rgb_dec(z_sample_xy)
+            y_mu_z_y = vae_img_dec(z_sample_y)
+            y_mu_z_xy = vae_img_dec(z_sample_xy)
             x_logit_z_x = vae_txt_dec(z_sample_x, x_src, x_len)
             x_logit_z_xy = vae_txt_dec(z_sample_xy, x_src, x_len)
 
@@ -213,7 +169,7 @@ if __name__ == '__main__':
                     'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
                     'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
                     'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                    'y': y_rgb, 'x': x_tgt, 'x_len': x_len, 'pad_index': pad_index}
+                    'y': tgt_chair, 'x': x_tgt, 'pad_index': pad_index}
 
             # compute loss
             loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta)
@@ -235,27 +191,27 @@ if __name__ == '__main__':
 
     def test(epoch):
         vae_emb.eval()
-        vae_rgb_enc.eval()
+        vae_img_enc.eval()
         vae_txt_enc.eval()
         vae_mult_enc.eval()
-        vae_rgb_dec.eval()
+        vae_img_dec.eval()
         vae_txt_dec.eval()
 
         with torch.no_grad():
             loss_meter = AverageMeter()
             pbar = tqdm(total=len(test_loader))
 
-            for batch_idx, (y_rgb, x_tgt, x_src, x_len) in enumerate(test_loader):
+            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len) in enumerate(test_loader):
                 batch_size = x_src.size(0) 
-                y_rgb = y_rgb.to(device).float()
+                tgt_chair = tgt_chair.to(device).float()
                 x_src = x_src.to(device)
                 x_tgt = x_tgt.to(device)
-                x_len = x_len.to(device)
+                x_len = x_len.o(device)
 
                 # Encode to |z|
                 z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
-                z_y_mu, z_y_logvar = vae_rgb_enc(y_rgb)
-                z_xy_mu, z_xy_logvar = vae_mult_enc(y_rgb, x_src, x_len)
+                z_y_mu, z_y_logvar = vae_img_enc(tgt_chair)
+                z_xy_mu, z_xy_logvar = vae_mult_enc(tgt_chair, x_src, x_len)
 
                 # sample via reparametrization
                 z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
@@ -263,8 +219,8 @@ if __name__ == '__main__':
                 z_sample_xy = _reparameterize(z_xy_mu, z_xy_logvar)
 
                 # "predictions"
-                y_mu_z_y = vae_rgb_dec(z_sample_y)
-                y_mu_z_xy = vae_rgb_dec(z_sample_xy)
+                y_mu_z_y = vae_img_dec(z_sample_y)
+                y_mu_z_xy = vae_img_dec(z_sample_xy)
                 x_logit_z_x = vae_txt_dec(z_sample_x, x_src, x_len)
                 x_logit_z_xy = vae_txt_dec(z_sample_xy, x_src, x_len)
 
@@ -273,7 +229,7 @@ if __name__ == '__main__':
                         'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
                         'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
                         'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                        'y': y_rgb, 'x': x_tgt, 'x_len': x_len, 'pad_index': pad_index}
+                        'y': tgt_chair, 'x': x_tgt, 'x_len': x_len, 'pad_index': pad_index}
 
                 # compute loss
                 loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta)
@@ -286,13 +242,12 @@ if __name__ == '__main__':
         return loss_meter.avg
 
     print("=== begin training ===")
-    print("args: sup_lvl: {} alpha: {} beta: {} seed: {} context condition?: {} cuda?: {} weaksup: {}".format(args.sup_lvl,
+    print("args: sup_lvl: {} alpha: {} beta: {} seed: {} context condition?: {} cuda?: {}".format(args.sup_lvl,
                                                                                     args.alpha,
                                                                                     args.beta,
                                                                                     args.seed,
                                                                                     args.context_condition,
-                                                                                    args.cuda,
-                                                                                    args.weaksup))
+                                                                                    args.cuda))
 
     # repeat training on same model w/ different random seeds for |num_iter| times
     for i in range(1, args.num_iter + 1):
@@ -311,7 +266,7 @@ if __name__ == '__main__':
         device = torch.device('cuda' if args.cuda else 'cpu')
 
         # Define training dataset & build vocab
-        train_dataset = WeakSup_ColorDataset(supervision_level=args.sup_lvl, context_condition=args.context_condition)
+        train_dataset = Weaksup_Chairs_Reference(supervision_level=args.sup_lvl, context_condition=args.context_condition)
         train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
@@ -320,11 +275,11 @@ if __name__ == '__main__':
         pad_index = w2i[PAD_TOKEN]
 
         # Define test dataset
-        test_dataset = ColorDataset(vocab=vocab, split='Validation', context_condition=args.context_condition)
+        test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
         if args.weaksup:
-            unpaired_dataset = ColorDataset(vocab=vocab, split='Train', context_condition=args.context_condition)
+            unpaired_dataset = Chairs_ReferenceGame(vocab=vocab, split='Train', context_condition=args.context_condition)
             unpaired_txt_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
             unpaired_img_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
 
@@ -332,30 +287,31 @@ if __name__ == '__main__':
         z_dim = args.z_dim
 
         # Define model
+        channels, img_size = 3, 32
         vae_emb = TextEmbedding(vocab_size)
-        vae_rgb_enc = ColorEncoder(z_dim)
+        vae_img_enc = ImageEncoder(channels, img_size, z_dim)
         vae_txt_enc = TextEncoder(vae_emb, z_dim)
-        vae_mult_enc = MultimodalEncoder(vae_emb, z_dim)
-        vae_rgb_dec = ColorDecoder(z_dim)
+        vae_mult_enc = ImageTextEncoder(channels, img_size, z_dim, vae_emb)
+        vae_img_dec = ImageDecoder(channels, img_size, z_dim)
         vae_txt_dec = TextDecoder(vae_emb, z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
                                     w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
 
         # Mount devices unto GPU
         vae_emb = vae_emb.to(device)
-        vae_rgb_enc = vae_rgb_enc.to(device)
+        vae_img_enc = vae_img_enc.to(device)
         vae_txt_enc = vae_txt_enc.to(device)
         vae_mult_enc = vae_mult_enc.to(device)
-        vae_rgb_dec = vae_rgb_dec.to(device)
+        vae_img_dec = vae_img_dec.to(device)
         vae_txt_dec = vae_txt_dec.to(device)
 
         # Define optimizer
         optimizer = torch.optim.Adam(
             chain(
             vae_emb.parameters(),
-            vae_rgb_enc.parameters(),
+            vae_img_enc.parameters(),
             vae_txt_enc.parameters(),
             vae_mult_enc.parameters(),
-            vae_rgb_dec.parameters(),
+            vae_img_dec.parameters(),
             vae_txt_dec.parameters(),
         ), lr=args.lr)
 
@@ -363,7 +319,10 @@ if __name__ == '__main__':
         track_loss = np.zeros((args.epochs, 2))
         
         for epoch in range(1, args.epochs + 1):
-            train_loss = train(epoch)
+            if args.weaksup:
+                train_loss = train_weakly_supervised(epoch)
+            else:
+                train_loss = train(epoch)
             test_loss = test(epoch)
 
             is_best = test_loss < best_loss
@@ -374,10 +333,10 @@ if __name__ == '__main__':
             save_checkpoint({
                 'epoch': epoch,
                 'vae_emb': vae_emb.state_dict(),
-                'vae_rgb_enc': vae_rgb_enc.state_dict(),
+                'vae_img_enc': vae_img_enc.state_dict(),
                 'vae_txt_enc': vae_txt_enc.state_dict(),
                 'vae_mult_enc': vae_mult_enc.state_dict(),
-                'vae_rgb_dec': vae_rgb_dec.state_dict(),
+                'vae_img_dec': vae_img_dec.state_dict(),
                 'vae_txt_dec': vae_txt_dec.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'track_loss': track_loss,
