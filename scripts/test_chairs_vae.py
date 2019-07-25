@@ -19,7 +19,7 @@ SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
 PAD_TOKEN = '<pad>'
 UNK_TOKEN = '<unk>'
-N_SAMPLE = 100
+N_SAMPLE = 150
 
 if __name__ == '__main__':
     import argparse
@@ -34,7 +34,7 @@ if __name__ == '__main__':
                         help='lambda argument for text loss')
     parser.add_argument('--beta', type=float, default=1,
                         help='lambda argument for rgb loss')
-    parser.add_argument('--context_condition', type=str, default='far',
+    parser.add_argument('--context_condition', type=str, default='all',
                         help='whether the dataset is to include all data')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
@@ -152,11 +152,11 @@ if __name__ == '__main__':
             loss_meter = AverageMeter()
 
             total_count = 0
-            mean_correct_count, sample_correct_count, cond_correct_count, diverge_count = 0, 0, 0, 0
+            mean_correct_count, sample_correct_count, cond_correct_count = 0, 0, 0
 
             with tqdm(total=len(test_loader)) as pbar:
                 for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len) in enumerate(test_loader):
-                    batch_size = x_src.size(0) 
+                    batch_size = x_src.size(0)
                     tgt_chair = tgt_chair.to(device).float()
                     d1_chair = d1_chair.to(device).float()
                     d2_chair = d2_chair.to(device).float()
@@ -188,7 +188,7 @@ if __name__ == '__main__':
                         # choice based on conditional distribution z ~ q(z|x)
                         pred_rgb_cond, cond_choice = get_conditional_choice(tgt_chair[i], d1_chair[i], d2_chair[i], z_x_mu[i])
                         
-                        mean_correct, sample_correct, cond_correct, diverge = False, False, False, False
+                        mean_correct, sample_correct, cond_correct = False, False, False
 
                         if p_x_y1_mean < p_x_y2_mean and p_x_y1_mean < p_x_y3_mean:
                             mean_correct_count += 1
@@ -199,9 +199,6 @@ if __name__ == '__main__':
                         if cond_choice == 1:
                             cond_correct_count += 1
                             cond_correct = True
-                        if (sample_correct and not mean_correct) or (mean_correct and not sample_correct):
-                            diverge_count += 1
-                            diverge = True
                         if verbose:
                             match_text = get_text(vocab['i2w'], x_tgt[i], x_len[i])
                             print("================== ==================")
@@ -221,12 +218,10 @@ if __name__ == '__main__':
             mean_acc = mean_correct_count / float(total_count) * 100
             sample_acc = sample_correct_count / float(total_count) * 100
             cond_acc = cond_correct_count / float(total_count) * 100
-            diverge_rate = diverge_count / float(total_count) * 100
             print('====> Final Sample-based Accuracy: {}/{} = {}%'.format(sample_correct_count, total_count, sample_acc))
             print('====> Final Mean-based Accuracy: {}/{} = {}%'.format(mean_correct_count, total_count, mean_acc))
             print('====> Final Conditional Accuracy: {}/{} = {}%'.format(cond_correct_count, total_count, cond_acc))
-            print('====> Final Divergence Rate: {}/{} = {}%\n'.format(diverge_count, total_count, diverge_rate))
-        return mean_acc, sample_acc, cond_acc, diverge_rate
+        return mean_acc, sample_acc, cond_acc
 
     def load_checkpoint(folder='./', filename='model_best'):
         print("\nloading checkpoint file: {}.pth.tar ...\n".format(filename)) 
@@ -301,7 +296,7 @@ if __name__ == '__main__':
 
     print("=== begin testing ===")
 
-    losses, mean_accuracies, sample_accuracies, cond_accuracies, diverge_rates, best_epochs = [], [], [], [], [], []
+    losses, mean_accuracies, sample_accuracies, cond_accuracies, best_epochs = [], [], [], [], []
     for iter_num in range(1, args.num_iter + 1):
         filename = 'checkpoint_vae_{}_{}_alpha={}_beta={}_best'.format(args.sup_lvl,
                                                                         iter_num,
@@ -328,9 +323,8 @@ if __name__ == '__main__':
 
         # compute test loss & reference game accuracy
         # losses.append(test_loss())
-        mean_acc, sample_acc, cond_acc, diverge_rate = test_refgame_accuracy()
+        mean_acc, sample_acc, cond_acc = test_refgame_accuracy()
         
-        diverge_rates.append(diverge_rate)
         mean_accuracies.append(mean_acc)
         sample_accuracies.append(sample_acc)
         cond_accuracies.append(cond_acc)
@@ -340,14 +334,12 @@ if __name__ == '__main__':
     mean_accuracies = np.array(mean_accuracies)
     sample_accuracies = np.array(sample_accuracies)
     cond_accuracies = np.array(cond_accuracies)
-    diverge_rates = np.array(diverge_rates)
 
     # save files as np arrays
     print("saving file to {} ...".format(args.out_dir))
     np.save(os.path.join(args.out_dir, 'sample_accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), sample_accuracies)
     np.save(os.path.join(args.out_dir, 'mean_accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), mean_accuracies)
     np.save(os.path.join(args.out_dir, 'cond_accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), cond_accuracies)
-    np.save(os.path.join(args.out_dir, 'divergence_rates_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), diverge_rates)
     print("... saving complete.")
 
     print("\n======> Best epochs: {}".format(best_epochs))

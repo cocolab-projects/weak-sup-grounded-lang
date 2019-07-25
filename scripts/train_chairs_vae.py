@@ -206,7 +206,7 @@ if __name__ == '__main__':
                 tgt_chair = tgt_chair.to(device).float()
                 x_src = x_src.to(device)
                 x_tgt = x_tgt.to(device)
-                x_len = x_len.o(device)
+                x_len = x_len.to(device)
 
                 # Encode to |z|
                 z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)

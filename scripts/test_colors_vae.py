@@ -10,7 +10,7 @@ from torch.distributions.normal import Normal
 
 from utils import (AverageMeter, score_txt_logits, _reparameterize,
                     loss_multimodal, _log_mean_exp, gaussian_log_pdf, isotropic_gaussian_log_pdf,
-                    bernoulli_log_pdf, get_text, get_image_text_joint_nll)
+                    bernoulli_log_pdf, get_text, get_image_text_joint_nll, get_image_text_joint_nll_cond_only)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
                     ColorEncoder, ColorEncoder_Augmented, MultimodalEncoder, ColorDecoder)
 from color_dataset import (ColorDataset, Colors_ReferenceGame)
@@ -126,6 +126,14 @@ if __name__ == '__main__':
     def get_sampled_px_z_py_given_z(y_rgb, x_src, x_tgt, x_len):
         z_samples = torch.randn(N_SAMPLE, train_args.z_dim).to(device)
 
+        y_mu_list = vae_rgb_dec(z_samples)
+        x_tgt_logits_list = vae_txt_dec(z_samples, x_src.unsqueeze(0).repeat(N_SAMPLE, 1),
+                                                    x_len.unsqueeze(0).repeat(N_SAMPLE))
+        elt_max_len = x_tgt_logits_list.size(1)
+        x_tgt_i = x_tgt[:elt_max_len]
+        x_len_i = elt_max_len
+
+        return get_image_text_joint_nll_cond_only(y_i, y_mu_list, x_tgt_i, x_tgt_logits_list, x_len, z_samples, z_xy_mu, z_xy_logvar, pad_index)
 
     def get_sampled_conditional_choice(y_1, y_2, y_3, z_x_mu, z_x_logvar):
         z_samples = torch.randn(N_SAMPLE, train_args.z_dim).to(device) * torch.exp(0.5 * z_x_logvar) + z_x_mu
@@ -134,7 +142,7 @@ if __name__ == '__main__':
         diff_tgt = torch.sum(torch.pow(pred_rgb_cond - y_1.unsqueeze(0).repeat(N_SAMPLE, 1), 2), dim=1)
         diff_d1 = torch.sum(torch.pow(pred_rgb_cond - y_2.unsqueeze(0).repeat(N_SAMPLE, 1), 2), dim=1)
         diff_d2 = torch.sum(torch.pow(pred_rgb_cond - y_3.unsqueeze(0).repeat(N_SAMPLE, 1), 2), dim=1)
-        return pred_rgb_cond, 1 if (diff_tgt < diff_d1 and diff_tgt < diff_d2) else (2 if diff_d1 < diff_d2 else 3)
+        return 1 if (diff_tgt < diff_d1 and diff_tgt < diff_d2) else (2 if diff_d1 < diff_d2 else 3)
 
     def get_conditional_choice(y_1, y_2, y_3, z_mu):
         pred_rgb_cond = vae_rgb_dec(z_mu)

@@ -206,6 +206,24 @@ def loss_multimodal(out, batch_size, alpha=1, beta=1, gamma=1):
     loss = elbo_x + elbo_y + elbo_x_given_y + elbo_y_given_x
     return loss
 
+def loss_text_unimodal(out, batch_size, alpha=1, beta=1, gamma=1):
+    log_p_x_given_z_x = score_txt_logits(out['x'], out['x_logit_z_x'], out['x_len'], out['pad_index'])
+    kl_q_z_given_x_and_p_z = -0.5 * (1 + out['z_x_logvar'] - out['z_x_mu'].pow(2) - out['z_x_logvar'].exp())
+    kl_q_z_given_x_and_p_z = torch.sum(kl_q_z_given_x_and_p_z, dim=1)
+    elbo_x = alpha * -log_p_x_given_z_x + gamma * kl_q_z_given_x_and_p_z
+    elbo_x = torch.mean(elbo_x)
+
+    return elbo_x
+
+def loss_image_unimodal(out, batch_size, alpha=1, beta=1, gamma=1):
+    log_p_y_given_z_y = bernoulli_log_pdf(out['y'].view(batch_size, -1), out['y_mu_z_y'].view(batch_size, -1))
+    kl_q_z_given_y_and_p_z = -0.5 * (1 + out['z_y_logvar'] - out['z_y_mu'].pow(2) - out['z_y_logvar'].exp())
+    kl_q_z_given_y_and_p_z = torch.sum(kl_q_z_given_y_and_p_z, dim=1)
+    elbo_y = beta * -log_p_y_given_z_y + gamma * kl_q_z_given_y_and_p_z
+    elbo_y = torch.mean(elbo_y)
+
+    return elbo_y
+
 def get_image_text_joint_nll(y, y_mu_list, x_tgt, x_tgt_logits_list, x_len, z_list, z_mu, z_logvar, pad_index, verbose=False):
     batch_size = y.size(0)
     N = len(x_tgt_logits_list)
@@ -239,6 +257,25 @@ def get_image_text_joint_nll(y, y_mu_list, x_tgt, x_tgt_logits_list, x_len, z_li
         print("log_q_z_given_xy: {}".format(log_q_z_given_xy))
         print()
         # breakpoint()
+
+    return nll
+
+def get_image_text_joint_nll_cond_only(y, y_mu_list, x_tgt, x_tgt_logits_list, x_len, pad_index, verbose=False):
+    batch_size = y.size(0)
+    N = len(x_tgt_logits_list)
+    log_p_xy_list = []
+
+    extended_dim = [N] + [1] * y.dim()
+    y, x_tgt = y.unsqueeze(0).repeat(extended_dim), x_tgt.unsqueeze(0).repeat(N, 1)
+
+    log_p_x_given_z = score_txt_logits(x_tgt, x_tgt_logits_list, x_len, pad_index)
+    log_p_y_given_z = bernoulli_log_pdf(y.float().view(N, -1), y_mu_list.view(N, -1))
+
+    log_p_xy = log_p_x_given_z + log_p_y_given_z
+    log_p_xy = log_p_xy.cpu()  # cast to CPU so we don't blow up
+
+    nll = _log_mean_exp(log_p_xy.unsqueeze(0), dim=1)
+    nll = -torch.mean(nll)
 
     return nll
 

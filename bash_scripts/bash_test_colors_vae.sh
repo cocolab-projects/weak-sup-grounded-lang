@@ -8,7 +8,7 @@ for ALPHA in 0.5 1
 do
 	for BETA in 1 2 4 5 8
 	do
-		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=7 python test_colors_vae.py ${LOAD_DIR}_alpha_beta ${RES_OUT_DIR}_alpha_beta_more_smp --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
+		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=7 python test_colors_vae_exp.py ${LOAD_DIR}_alpha_beta ${RES_OUT_DIR}_alpha_beta_exp_smp --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
 		# screen -S train_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=1 python train_colors_vae.py ${OUT_DIR}_hard ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda --hard; exec bash";
 	done
 done
@@ -17,7 +17,7 @@ for ALPHA in 0.5 1 5 8 10
 do
 	for BETA in 10 20 30
 	do
-		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=8 python test_colors_vae.py ${LOAD_DIR}_alpha_beta ${RES_OUT_DIR}_alpha_beta_more_smp --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
+		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=8 python test_colors_vae_exp.py ${LOAD_DIR}_alpha_beta ${RES_OUT_DIR}_alpha_beta_exp_smp --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
 		# screen -S train_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=1 python train_colors_vae.py ${OUT_DIR}_hard ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda --hard; exec bash";
 	done
 done
@@ -26,7 +26,7 @@ for ALPHA in 5 8 10
 do
 	for BETA in 1 2 4 5 8
 	do
-		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=9 python test_colors_vae.py ${LOAD_DIR}_alpha_beta ${RES_OUT_DIR}_alpha_beta_more_smp --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
+		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=9 python test_colors_vae_exp.py ${LOAD_DIR}_alpha_beta ${RES_OUT_DIR}_alpha_beta_exp_smp --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
 		# screen -S train_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=1 python train_colors_vae.py ${OUT_DIR}_hard ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda --hard; exec bash";
 	done
 done

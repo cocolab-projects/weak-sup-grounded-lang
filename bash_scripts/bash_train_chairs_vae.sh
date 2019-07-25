@@ -8,7 +8,7 @@ for ALPHA in 1
 do
 	for BETA in 1 2 4 5 8
 	do
-		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=2 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_re ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda; exec bash";
+		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=2 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_re ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --seed 40 --cuda; exec bash";
 	done
 done
 
@@ -16,7 +16,7 @@ for ALPHA in 5
 do
 	for BETA in 1 2 4 5 8
 	do
-		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=3 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_re ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda; exec bash";
+		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=3 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_re ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --seed 40 --cuda; exec bash";
 	done
 done
 
@@ -24,7 +24,7 @@ for ALPHA in 10
 do
 	for BETA in 1 2 4 5 8
 	do
-		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=4 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_re ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda; exec bash";
+		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=4 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_re ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --seed 40 --cuda; exec bash";
 	done
 done
 
