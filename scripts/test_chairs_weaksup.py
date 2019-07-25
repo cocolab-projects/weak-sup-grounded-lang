@@ -21,7 +21,8 @@ if __name__ == '__main__':
     parser.add_argument('sup_lvl', type=float, help='supervision level, if any')
     parser.add_argument('--num_iter', type=int, default=1,
                         help='number of total iterations performed on each setting [default: 1]')
-    parser.add_argument('--hard', action='store_true', help='whether the dataset is to be easy')
+    parser.add_argument('--context_condition', type=str, default='all',
+                        help='whether the dataset is to include all data')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
@@ -130,7 +131,7 @@ if __name__ == '__main__':
         print("best training epoch: {}".format(epoch))
 
         if iter_num == 1:
-            test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Test', hard=args.hard)
+            test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Test', context_condition=args.context_condition)
             test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
 
         txt_img_comp = TextImageCompatibility(vocab_size)

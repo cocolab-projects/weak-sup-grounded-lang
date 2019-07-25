@@ -23,7 +23,7 @@ SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
 PAD_TOKEN = '<pad>'
 UNK_TOKEN = '<unk>'
-TRAINING_PERCENTAGE = 70 / 100
+TRAINING_PERCENTAGE = 64 / 100
 TESTING_PERCENTAGE = 20 / 100
 MIN_USED = 2
 MAX_LEN = 10
@@ -64,12 +64,13 @@ class Chairs_ReferenceGame(data.Dataset):
 
         target_names = data[:, 3]
         target_uniqs = np.unique(target_names)
-        print('splitting data into train and test -- condition "{}"'.format('hard' if self.hard else 'easy'))
+        print('\nsplitting data into train and test -- condition "{}"'.format('hard' if self.hard else 'easy'))
         if not self.hard:
+            # npy_path_easy = os.path.join(RAW_DIR, 'cleaned_data_easy.npy')
+            # if not os.path.exists(npy_path_easy):
             # for each unique chair, divide all rows containing it into
             # training and test sets
             new_data = []
-            
             pbar = tqdm(total=len(target_uniqs))
             for target in target_uniqs:
                 data_i = data[target_names == target]
@@ -86,7 +87,12 @@ class Chairs_ReferenceGame(data.Dataset):
             new_data = np.concatenate(new_data, axis=0)
             # overwrite data variable
             data = new_data
+            # np.save(npy_path_easy, data)
+            # else:
+            #     data = np.load(npy_path_easy)
         else:  # if difficulty is "hard", hard == True
+            # npy_path_hard = os.path.join(RAW_DIR, 'cleaned_data_hard.npy')
+            # if not os.path.exists(npy_path_hard):
             # for all chairs, divide into train and test sets
             train_len = int(TRAINING_PERCENTAGE * len(target_uniqs))
             test_len = int(TESTING_PERCENTAGE * len(target_uniqs))
@@ -97,7 +103,8 @@ class Chairs_ReferenceGame(data.Dataset):
             else:
                 splitter = np.in1d(target_names, target_uniqs[-test_len:])
             data = data[splitter]
-
+            # else:
+            #     data = np.load(npy_path_hard)
 
         # replace target_chair with a label
         labels = []
@@ -276,9 +283,9 @@ class Chairs_ReferenceGame(data.Dataset):
         return trans(chair_a), trans(chair_b), trans(chair_c), targets, inputs, length
 
 class Weaksup_Chairs_Reference(Chairs_ReferenceGame):
-    def __init__(self, vocab=None, transform=None, supervision_level=1.0, split='Train', hard=False):
+    def __init__(self, vocab=None, transform=None, supervision_level=1.0, split='Train', context_condition='all'):
         super(Weaksup_Chairs_Reference, self).__init__(
-                        vocab=vocab, split=split, hard=hard, image_transform=transform)
+                        vocab=vocab, split=split, context_condition='all', image_transform=transform)
         
         self.random_state = np.random.RandomState(18192)
         n = len(self.inputs)
