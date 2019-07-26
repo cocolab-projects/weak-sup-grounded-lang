@@ -206,7 +206,7 @@ def loss_multimodal(out, batch_size, alpha=1, beta=1, gamma=1):
     loss = elbo_x + elbo_y + elbo_x_given_y + elbo_y_given_x
     return loss
 
-def loss_text_unimodal(out, batch_size, alpha=1, beta=1, gamma=1):
+def loss_text_unimodal(out, batch_size, alpha=1, gamma=1):
     log_p_x_given_z_x = score_txt_logits(out['x'], out['x_logit_z_x'], out['x_len'], out['pad_index'])
     kl_q_z_given_x_and_p_z = -0.5 * (1 + out['z_x_logvar'] - out['z_x_mu'].pow(2) - out['z_x_logvar'].exp())
     kl_q_z_given_x_and_p_z = torch.sum(kl_q_z_given_x_and_p_z, dim=1)
@@ -215,7 +215,7 @@ def loss_text_unimodal(out, batch_size, alpha=1, beta=1, gamma=1):
 
     return elbo_x
 
-def loss_image_unimodal(out, batch_size, alpha=1, beta=1, gamma=1):
+def loss_image_unimodal(out, batch_size, beta=1, gamma=1):
     log_p_y_given_z_y = bernoulli_log_pdf(out['y'].view(batch_size, -1), out['y_mu_z_y'].view(batch_size, -1))
     kl_q_z_given_y_and_p_z = -0.5 * (1 + out['z_y_logvar'] - out['z_y_mu'].pow(2) - out['z_y_logvar'].exp())
     kl_q_z_given_y_and_p_z = torch.sum(kl_q_z_given_y_and_p_z, dim=1)
