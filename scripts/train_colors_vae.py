@@ -78,8 +78,8 @@ if __name__ == '__main__':
         vae_txt_dec.train()
 
         loss_meter = AverageMeter()
-        pbar = tqdm(total=len(train_loader))
-        for batch_idx, (y_rgb, x_tgt, x_src, x_len) in enumerate(train_loader):
+        pbar = tqdm(total=len(train_xy_loader))
+        for batch_idx, (y_rgb, x_tgt, x_src, x_len) in enumerate(train_xy_loader):
             batch_size = y_rgb.size(0)
 
             models_xy = (vae_txt_enc, vae_rgb_enc, vae_mult_enc, vae_txt_dec, vae_rgb_dec)
@@ -118,7 +118,7 @@ if __name__ == '__main__':
         vae_rgb_dec.train()
         vae_txt_dec.train()
 
-        train_xy_iterator = train_loader.__iter__()
+        train_xy_iterator = train_xy_loader.__iter__()
         train_x_iterator = train_x_loader.__iter__()
         train_y_iterator = train_y_loader.__iter__()
 
@@ -127,7 +127,7 @@ if __name__ == '__main__':
         models_y = (vae_rgb_enc, vae_rgb_dec)
         
         loss_meter = AverageMeter()
-        pbar = tqdm(total=len(train_loader))
+        pbar = tqdm(total=len(train_y_iterator))
         for batch_i in range(len(train_y_iterator)):
             try:
                 data_xy_args = list(next(train_xy_iterator))
@@ -276,8 +276,8 @@ if __name__ == '__main__':
 
         # Define training dataset & build vocab
         train_dataset = WeakSup_ColorDataset(supervision_level=args.sup_lvl, context_condition=args.context_condition)
-        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
-        N_mini_batches = len(train_loader)
+        train_xy_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
+        N_mini_batches = len(train_xy_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
         w2i = vocab['w2i']

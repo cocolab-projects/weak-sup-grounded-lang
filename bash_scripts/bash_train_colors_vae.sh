@@ -32,15 +32,17 @@ SUP_LEV=1.0;
 # 	done
 # done
 
-for SUP_LEV in 0.0005 0.001 0.0015 0.002 0.003 0.004 0.005 0.01 0.02 0.05 0.1 0.2 0.5 1.0
-do
-		screen -S train_colors_${SUP_LEV}_vae_norm -dm bash -c "CUDA_VISIBLE_DEVICES=6 python train_colors_vae.py ${OUT_DIR}_weaksup_norm ${SUP_LEV} --dropout ${DROPOUT} --alpha 1 --beta 10 --num_iter 3 --cuda; exec bash";
-		screen -S train_colors_${SUP_LEV}_vae_hard_norm -dm bash -c "CUDA_VISIBLE_DEVICES=7 python train_colors_vae.py ${OUT_DIR}_weaksup_hard_norm ${SUP_LEV} --dropout ${DROPOUT} --alpha 1 --beta 10 --num_iter 3 --cuda --context_condition all; exec bash";
-done
-
-
 # for SUP_LEV in 0.0005 0.001 0.0015 0.002 0.003 0.004 0.005 0.01 0.02 0.05 0.1 0.2 0.5 1.0
 # do
 # 		screen -S train_colors_${SUP_LEV}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=0 python train_colors_vae.py ${OUT_DIR}_weaksup ${SUP_LEV} --dropout ${DROPOUT} --alpha 0.5 --beta 1000 --num_iter 3 --cuda; exec bash";
 # 		screen -S train_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=1 python train_colors_vae.py ${OUT_DIR}_weaksup_hard ${SUP_LEV} --dropout ${DROPOUT} --alpha 0.5 --beta 1000 --num_iter 3 --cuda --hard; exec bash";
 # done
+
+#### WEAK SUPERVISION with unpaired datapoints included VERSION ONLY ####
+for SUP_LEV in 0.0005 0.001 0.0015 0.002 0.003 0.004 0.005 0.01 0.02 0.05 0.1 0.2 0.5 1.0
+do
+		screen -S train_colors_${SUP_LEV}_vae_far -dm bash -c "CUDA_VISIBLE_DEVICES=4 python train_colors_vae.py ${OUT_DIR}_weaksup_far ${SUP_LEV} --dropout ${DROPOUT} --alpha 1 --beta 10 --num_iter 3 --weaksup --cuda; exec bash";
+		screen -S train_colors_${SUP_LEV}_vae_close -dm bash -c "CUDA_VISIBLE_DEVICES=5 python train_colors_vae.py ${OUT_DIR}_weaksup_close ${SUP_LEV} --dropout ${DROPOUT} --alpha 1 --beta 10 --num_iter 3 --weaksup --cuda --context_condition close; exec bash";
+		screen -S train_colors_${SUP_LEV}_vae_all -dm bash -c "CUDA_VISIBLE_DEVICES=6 python train_colors_vae.py ${OUT_DIR}_weaksup_all ${SUP_LEV} --dropout ${DROPOUT} --alpha 1 --beta 10 --num_iter 3 --weaksup --cuda --context_condition all; exec bash";
+done
+
