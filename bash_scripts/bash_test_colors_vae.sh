@@ -33,10 +33,8 @@ SUP_LEV=1.0;
 
 for SUP_LEV in 0.0005 0.001 0.0015 0.002 0.003 0.004 0.005 0.01 0.02 0.05 0.1 0.2 0.5 1.0
 do
-    screen -S test_colors_${SUP_LEV}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=1 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup ${RES_OUT_DIR}_weaksup_exp --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 1 --cuda; exec bash";
-    screen -S test_colors_${SUP_LEV}_vae_test_hard -dm bash -c "CUDA_VISIBLE_DEVICES=2 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup ${RES_OUT_DIR}_weaksup_test_hard_exp --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 1 --cuda --context_condition all; exec bash";
-    screen -S test_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=3 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup_hard ${RES_OUT_DIR}_weaksup_hard_exp --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 1 --cuda; exec bash";
-    screen -S test_colors_${SUP_LEV}_vae_hard_test_hard -dm bash -c "CUDA_VISIBLE_DEVICES=9 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup_hard ${RES_OUT_DIR}_weaksup_hard_test_hard_exp --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 1 --cuda --context_condition all; exec bash";
+    screen -S test_colors_${SUP_LEV}_vae_far -dm bash -c "CUDA_VISIBLE_DEVICES=6 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup_far ${RES_OUT_DIR}_weaksup_unpaired_far_test_far --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 3 --cuda --context_condition far; exec bash";
+    screen -S test_colors_${SUP_LEV}_vae_all -dm bash -c "CUDA_VISIBLE_DEVICES=7 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup_far ${RES_OUT_DIR}_weaksup_unpaired_far_test_all --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 3 --cuda --context_condition all; exec bash";
 done
 
 # for SUP_LEV in 0.0005 0.001 0.0015 0.002 0.0025 0.003 0.004 0.005 0.01 0.02 0.05 0.1 0.2 0.5 1.0
