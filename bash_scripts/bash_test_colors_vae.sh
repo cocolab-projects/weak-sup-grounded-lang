@@ -4,40 +4,38 @@ LOAD_DIR=$1;
 RES_OUT_DIR=$2;
 SUP_LEV=1.0;
 
-for ALPHA in 0.5 1
-do
-	for BETA in 1 2 4 5 8
-	do
-		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=7 python test_colors_vae_exp.py ${LOAD_DIR}_alpha_beta ${RES_OUT_DIR}_alpha_beta_exp_smp --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
-		# screen -S train_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=1 python train_colors_vae.py ${OUT_DIR}_hard ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda --hard; exec bash";
-	done
-done
-
-for ALPHA in 0.5 1 5 8 10
-do
-	for BETA in 10 20 30
-	do
-		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=8 python test_colors_vae_exp.py ${LOAD_DIR}_alpha_beta ${RES_OUT_DIR}_alpha_beta_exp_smp --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
-		# screen -S train_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=1 python train_colors_vae.py ${OUT_DIR}_hard ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda --hard; exec bash";
-	done
-done
-
-for ALPHA in 5 8 10
-do
-	for BETA in 1 2 4 5 8
-	do
-		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=9 python test_colors_vae_exp.py ${LOAD_DIR}_alpha_beta ${RES_OUT_DIR}_alpha_beta_exp_smp --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
-		# screen -S train_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=1 python train_colors_vae.py ${OUT_DIR}_hard ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda --hard; exec bash";
-	done
-done
-
-# for SUP_LEV in 0.0005 0.001 0.0015 0.002 0.003 0.004 0.005 0.01 0.02 0.05 0.1 0.2 0.5 1.0
+# for ALPHA in 0.5 1
 # do
-#     screen -S test_colors_${SUP_LEV}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=6 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup ${RES_OUT_DIR}_weaksup_exp --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 1 --cuda; exec bash";
-#     screen -S test_colors_${SUP_LEV}_vae_test_hard -dm bash -c "CUDA_VISIBLE_DEVICES=7 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup ${RES_OUT_DIR}_weaksup_test_hard_exp --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 1 --cuda --context_condition all; exec bash";
-#     screen -S test_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=8 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup_hard ${RES_OUT_DIR}_weaksup_hard_exp --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 1 --cuda; exec bash";
-#     screen -S test_colors_${SUP_LEV}_vae_hard_test_hard -dm bash -c "CUDA_VISIBLE_DEVICES=9 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup_hard ${RES_OUT_DIR}_weaksup_hard_test_hard_exp --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 1 --cuda --context_condition all; exec bash";
+# 	for BETA in 1 2 4 5 8
+# 	do
+# 		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=7 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup ${RES_OUT_DIR}_weaksup --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
+# 		# screen -S train_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=1 python train_colors_vae.py ${OUT_DIR}_hard ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda --hard; exec bash";
+# 	done
 # done
+
+# for ALPHA in 0.5 1 5 8 10
+# do
+# 	for BETA in 10 20 30
+# 	do
+# 		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=8 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup ${RES_OUT_DIR}_weaksup --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
+# 		# screen -S train_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=1 python train_colors_vae.py ${OUT_DIR}_hard ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda --hard; exec bash";
+# 	done
+# done
+
+# for ALPHA in 5 8 10
+# do
+# 	for BETA in 1 2 4 5 8
+# 	do
+# 		screen -S test_colors_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=9 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup ${RES_OUT_DIR}_weaksup --sup_lvl ${SUP_LEV} --alpha ${ALPHA} --beta ${BETA} --num_iter 1 --cuda; exec bash";
+# 		# screen -S train_colors_${SUP_LEV}_vae_hard -dm bash -c "CUDA_VISIBLE_DEVICES=1 python train_colors_vae.py ${OUT_DIR}_hard ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --num_iter 3 --cuda --hard; exec bash";
+# 	done
+# done
+
+for SUP_LEV in 0.0005 0.001 0.0015 0.002 0.003 0.004 0.005 0.01 0.02 0.05 0.1 0.2 0.5 1.0
+do
+    screen -S test_colors_${SUP_LEV}_vae_far -dm bash -c "CUDA_VISIBLE_DEVICES=6 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup_far ${RES_OUT_DIR}_weaksup_unpaired_far_test_far --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 3 --cuda --context_condition far; exec bash";
+    screen -S test_colors_${SUP_LEV}_vae_all -dm bash -c "CUDA_VISIBLE_DEVICES=7 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup_far ${RES_OUT_DIR}_weaksup_unpaired_far_test_all --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 3 --cuda --context_condition all; exec bash";
+done
 
 # for SUP_LEV in 0.0005 0.001 0.0015 0.002 0.0025 0.003 0.004 0.005 0.01 0.02 0.05 0.1 0.2 0.5 1.0
 # do

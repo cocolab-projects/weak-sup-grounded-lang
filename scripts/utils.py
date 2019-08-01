@@ -239,9 +239,7 @@ def get_image_text_joint_nll(y, y_mu_list, x_tgt, x_tgt_logits_list, x_len, z_li
     ## *** should be torch.sum since this is log of products, but it is summed over |z_dim| and thus magnitude is very large ***
     ## this trivializes the role of p(x|z) and p(y|z), so to adjust I use torch.mean, effectively dividing by 100
     log_q_z_given_xy = torch.sum(gaussian_log_pdf(z_list, z_mu, z_logvar), dim=1)
-    log_p_z = torch.sum(isotropic_gaussian_log_pdf(z_list), dim=1)
-    # log_q_z_given_xy = torch.mean(gaussian_log_pdf(z_list, z_mu, z_logvar), dim=1)
-    # log_p_z = torch.mean(isotropic_gaussian_log_pdf(z_list), dim=1)   
+    log_p_z = torch.sum(isotropic_gaussian_log_pdf(z_list), dim=1) 
 
     log_p_xy = log_p_x_given_z + log_p_y_given_z + log_p_z - log_q_z_given_xy
     log_p_xy = log_p_xy.cpu()  # cast to CPU so we don't blow up
@@ -249,14 +247,14 @@ def get_image_text_joint_nll(y, y_mu_list, x_tgt, x_tgt_logits_list, x_len, z_li
     nll = _log_mean_exp(log_p_xy.unsqueeze(0), dim=1)
     nll = -torch.mean(nll)
 
-    if verbose and N == 1:
-        print("x_len: {}".format(x_len))
-        print("log_p_x_given_z: {} for x_tgt: {}".format(log_p_x_given_z, x_tgt))
-        print("log_p_y_given_z: {}".format(log_p_y_given_z))
-        print("log_p_z: {}".format(log_p_z))
-        print("log_q_z_given_xy: {}".format(log_q_z_given_xy))
-        print()
-        # breakpoint()
+    # if verbose and N == 1:
+    #     print("x_len: {}".format(x_len))
+    #     print("log_p_x_given_z: {} for x_tgt: {}".format(log_p_x_given_z, x_tgt))
+    #     print("log_p_y_given_z: {}".format(log_p_y_given_z))
+    #     print("log_p_z: {}".format(log_p_z))
+    #     print("log_q_z_given_xy: {}".format(log_q_z_given_xy))
+    #     print()
+    #     # breakpoint()
 
     return nll
 
