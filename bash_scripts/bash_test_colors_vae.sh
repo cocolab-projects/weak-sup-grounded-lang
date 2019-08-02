@@ -33,8 +33,9 @@ SUP_LEV=1.0;
 
 for SUP_LEV in 0.0005 0.001 0.0015 0.002 0.003 0.004 0.005 0.01 0.02 0.05 0.1 0.2 0.5 1.0
 do
-    screen -S test_colors_${SUP_LEV}_vae_far -dm bash -c "CUDA_VISIBLE_DEVICES=6 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup_far ${RES_OUT_DIR}_weaksup_unpaired_far_test_far --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 3 --cuda --context_condition far; exec bash";
-    screen -S test_colors_${SUP_LEV}_vae_all -dm bash -c "CUDA_VISIBLE_DEVICES=7 python test_colors_vae_exp.py ${LOAD_DIR}_weaksup_far ${RES_OUT_DIR}_weaksup_unpaired_far_test_all --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 3 --cuda --context_condition all; exec bash";
+    screen -S test_colors_${SUP_LEV}_vae_posttrain_6terms_far -dm bash -c "CUDA_VISIBLE_DEVICES=6 python test_colors_vae.py ${LOAD_DIR}_weaksup_posttrain_6terms_far ${RES_OUT_DIR}_weaksup_posttrain_6terms_far-far --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 3 --cuda --context_condition far; exec bash";
+    # screen -S test_colors_${SUP_LEV}_vae_4terms_far -dm bash -c "CUDA_VISIBLE_DEVICES=7 python test_colors_vae.py ${LOAD_DIR}_weaksup_4terms_far ${RES_OUT_DIR}_weaksup_4terms_far-far --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 3 --cuda --context_condition far; exec bash";
+    # screen -S test_colors_${SUP_LEV}_vae_6terms_far -dm bash -c "CUDA_VISIBLE_DEVICES=8 python test_colors_vae.py ${LOAD_DIR}_weaksup_6terms_far ${RES_OUT_DIR}_weaksup_6terms_far-far --sup_lvl ${SUP_LEV} --alpha 1 --beta 10 --num_iter 3 --cuda --context_condition far; exec bash";
 done
 
 # for SUP_LEV in 0.0005 0.001 0.0015 0.002 0.0025 0.003 0.004 0.005 0.01 0.02 0.05 0.1 0.2 0.5 1.0

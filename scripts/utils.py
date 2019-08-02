@@ -36,13 +36,19 @@ class AverageMeter(object):
        self.count += n
        self.avg = self.sum / self.count
 
-def save_checkpoint(state, is_best, folder='./', filename='checkpoint'):
+def save_checkpoint(state, is_best, folder='./', filename='checkpoint', modality=(False, False)):
     if not os.path.isdir(folder):
         os.mkdir(folder)
     torch.save(state, os.path.join(folder, filename + '.pth.tar'))
     if is_best:
         shutil.copyfile(os.path.join(folder, filename + '.pth.tar'),
                         os.path.join(folder, filename + '_best.pth.tar'))
+        if modality[0]:
+            shutil.copyfile(os.path.join(folder, filename + '.pth.tar'),
+                        os.path.join(folder, filename + '_rgb_best.pth.tar'))
+        if modality[1]:
+            shutil.copyfile(os.path.join(folder, filename + '.pth.tar'),
+                        os.path.join(folder, filename + '_txt_best.pth.tar'))
 
 class OrderedCounter(Counter, OrderedDict):
     'Counter that remembers the order elements are first seen'
@@ -160,7 +166,6 @@ def score_txt_logits(text_seq, text_logits, text_len, ignore_index):
     loss = loss.view(n, s)
     loss = torch.sum(loss, dim=1)
     return loss
-    # return loss / text_len.float()
 
 def bernoulli_log_pdf(x, mu):
     mu = torch.clamp(mu, 1e-7, 1.-1e-7)
@@ -204,6 +209,24 @@ def loss_multimodal(out, batch_size, alpha=1, beta=1, gamma=1):
     elbo_y_given_x = torch.mean(elbo_y_given_x)
 
     loss = elbo_x + elbo_y + elbo_x_given_y + elbo_y_given_x
+    return loss
+
+def loss_multimodal_only(out, batch_size, alpha=1, beta=1, gamma=1):
+    batch_size = out['y'].size(0)
+
+    log_p_x_given_z_xy = score_txt_logits(out['x'], out['x_logit_z_xy'], out['x_len'], out['pad_index'])
+    kl_q_z_given_xy_q_z_given_y = _kl_normal_normal(out['z_xy_mu'], out['z_y_mu'], out['z_xy_logvar'], out['z_y_logvar'])
+    kl_q_z_given_xy_q_z_given_y = torch.sum(kl_q_z_given_xy_q_z_given_y, dim=1)
+    elbo_x_given_y = alpha * -log_p_x_given_z_xy + gamma * kl_q_z_given_xy_q_z_given_y
+    elbo_x_given_y = torch.mean(elbo_x_given_y)
+
+    log_p_y_given_z_xy = bernoulli_log_pdf(out['y'].view(batch_size, -1), out['y_mu_z_xy'].view(batch_size, -1))
+    kl_q_z_given_xy_q_z_given_x = _kl_normal_normal(out['z_xy_mu'], out['z_x_mu'], out['z_xy_logvar'], out['z_x_logvar'])
+    kl_q_z_given_xy_q_z_given_x = torch.sum(kl_q_z_given_xy_q_z_given_x, dim=1)
+    elbo_y_given_x = beta * -log_p_y_given_z_xy + gamma * kl_q_z_given_xy_q_z_given_x
+    elbo_y_given_x = torch.mean(elbo_y_given_x)
+
+    loss = elbo_x_given_y + elbo_y_given_x
     return loss
 
 def loss_text_unimodal(out, batch_size, alpha=1, gamma=1):

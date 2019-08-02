@@ -23,7 +23,7 @@ from models import (TextEmbedding, TextEncoder, TextDecoder,
 	x: text, y: rgb
 '''
 def forward_vae_rgb_text(data_xy, models):
-	y_rgb, x_tgt, x_src, x_len = data_xy
+	y_rgb, x_src, x_tgt, x_len = data_xy
 	vae_txt_enc, vae_rgb_enc, vae_mult_enc, vae_txt_dec, vae_rgb_dec = models
 
 	batch_size = x_src.size(0)
@@ -60,7 +60,7 @@ def forward_vae_image_text(data_xy, models):
 	'''
 	x: text, y: image
 	'''
-	y, x_tgt, x_src, x_len = data_xy
+	y, x_src, x_tgt, x_len = data_xy
 	vae_txt_enc, vae_rgb_enc, vae_mult_enc, vae_txt_dec, vae_rgb_dec = models
 
 	batch_size = x_src.size(0)
@@ -130,7 +130,7 @@ def forward_vae_image(data_y, models):
 	return out
 
 def forward_vae_text(data_x, models):
-	x_tgt, x_src, x_len = data_x
+	x_src, x_tgt, x_len = data_x
 	vae_txt_enc, vae_txt_dec = models
 
 	batch_size = x_src.size(0)

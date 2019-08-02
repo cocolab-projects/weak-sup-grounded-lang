@@ -78,7 +78,7 @@ class ColorDataset(data.Dataset):
         self.txt_sources, self.txt_targets, self.lengths, self.max_len = self.process_texts(self.texts)
         self.rgb_targets = np.array(self.rgb_targets)
 
-        print("... dataset preparation complete.\n")
+        print("... split: {} dataset preparation complete.\n".format(split))
 
     def process_texts(self, texts):
         sources, targets, lengths = [], [], []
@@ -232,7 +232,7 @@ class Colors_ReferenceGame(data.Dataset):
         self.d1_RGBs = np.array(self.d1_RGBs)
         self.d2_RGBs = np.array(self.d2_RGBs)
 
-        print("... dataset preparation complete.\n")
+        print("... split: {} || dataset preparation complete.\n".format(split))
 
     def build_vocab(self, texts):
         print("building vocab ...")
