@@ -300,68 +300,64 @@ class Weaksup_Chairs_Reference(Chairs_ReferenceGame):
 def preprocess_text_chairs(text):
     text = text.lower() 
     tokens = word_tokenize(text)
-    i = 0
-    while i < len(tokens):
-        while (tokens[i] != '.' and '.' in tokens[i]):
-            tokens[i] = tokens[i].replace('.','')
-        while (tokens[i] != '\'' and '\'' in tokens[i]):
-            tokens[i] = tokens[i].replace('\'','')
-        while('-' in tokens[i] or '/' in tokens[i]):
-            if tokens[i] == '/' or tokens[i] == '-':
-                tokens.pop(i)
-                i -= 1
-            if '/' in tokens[i]:
-                split = tokens[i].split('/')
-                tokens[i] = split[0]
-                i += 1
-                tokens.insert(i, split[1])
-            if '-' in tokens[i]:
-                split = tokens[i].split('-')                
-                tokens[i] = split[0]
-                i += 1
-                tokens.insert(i, split[1])
-            if tokens[i-1] == '/' or tokens[i-1] == '-':
-                tokens.pop(i-1)
-                i -= 1
-            if '/' in tokens[i-1]:
-                split = tokens[i-1].split('/')
-                tokens[i-1] = split[0]
-                i += 1
-                tokens.insert(i-1, split[1])
-            if '-' in tokens[i-1]:
-                split = tokens[i-1].split('-')                
-                tokens[i-1] = split[0]
-                i += 1
-                tokens.insert(i-1, split[1])
-        if tokens[i].endswith('er'):
-            tokens[i] = tokens[i][:-2]
-            i += 1
-            tokens.insert(i, 'er')
-        if tokens[i].endswith('est'):
-            tokens[i] = tokens[i][:-3]
-            i += 1
-            tokens.insert(i, 'est')
-        if tokens[i].endswith('ish'):
-            tokens[i] = tokens[i][:-3]
-            i += 1
-            tokens.insert(i, 'est')
-        if tokens[i-1].endswith('er'):
-            tokens[i-1] = tokens[i-1][:-2]
-            i += 1
-            tokens.insert(i-1, 'er')
-        if tokens[i-1].endswith('est'):
-            tokens[i-1] = tokens[i-1][:-3]
-            i += 1
-            tokens.insert(i-1, 'est')
-        if tokens[i-1].endswith('ish'):
-            tokens[i-1] = tokens[i-1][:-3]
-            i += 1
-            tokens.insert(i-1, 'est')
-        i += 1
-    replace = {'redd':'red', 'gren': 'green', 'whit':'white', 'biege':'beige', 'purp':'purple', 'olve':'olive', 'ca':'can', 'blu':'blue', 'orang':'orange', 'gray':'grey'}
-    for i in range(len(tokens)):
-        if tokens[i] in replace.keys():
-            tokens[i] = replace[tokens[i]]
+    # i = 0
+    # while i < len(tokens):
+    #     while (tokens[i] != '.' and '.' in tokens[i]):
+    #         tokens[i] = tokens[i].replace('.','')
+    #     while (tokens[i] != '\'' and '\'' in tokens[i]):
+    #         tokens[i] = tokens[i].replace('\'','')
+    #     while('-' in tokens[i] or '/' in tokens[i]):
+    #         if tokens[i] == '/' or tokens[i] == '-':
+    #             tokens.pop(i)
+    #             i -= 1
+    #         if '/' in tokens[i]:
+    #             split = tokens[i].split('/')
+    #             tokens[i] = split[0]
+    #             i += 1
+    #             tokens.insert(i, split[1])
+    #         if '-' in tokens[i]:
+    #             split = tokens[i].split('-')                
+    #             tokens[i] = split[0]
+    #             i += 1
+    #             tokens.insert(i, split[1])
+    #         if tokens[i-1] == '/' or tokens[i-1] == '-':
+    #             tokens.pop(i-1)
+    #             i -= 1
+    #         if '/' in tokens[i-1]:
+    #             split = tokens[i-1].split('/')
+    #             tokens[i-1] = split[0]
+    #             i += 1
+    #             tokens.insert(i-1, split[1])
+    #         if '-' in tokens[i-1]:
+    #             split = tokens[i-1].split('-')                
+    #             tokens[i-1] = split[0]
+    #             i += 1
+    #             tokens.insert(i-1, split[1])
+    #     if tokens[i].endswith('er'):
+    #         tokens[i] = tokens[i][:-2]
+    #         i += 1
+    #         tokens.insert(i, 'er')
+    #     if tokens[i].endswith('est'):
+    #         tokens[i] = tokens[i][:-3]
+    #         i += 1
+    #         tokens.insert(i, 'est')
+    #     if tokens[i].endswith('ish'):
+    #         tokens[i] = tokens[i][:-3]
+    #         i += 1
+    #         tokens.insert(i, 'est')
+    #     if tokens[i-1].endswith('er'):
+    #         tokens[i-1] = tokens[i-1][:-2]
+    #         i += 1
+    #         tokens.insert(i-1, 'er')
+    #     if tokens[i-1].endswith('est'):
+    #         tokens[i-1] = tokens[i-1][:-3]
+    #         i += 1
+    #         tokens.insert(i-1, 'est')
+    #     if tokens[i-1].endswith('ish'):
+    #         tokens[i-1] = tokens[i-1][:-3]
+    #         i += 1
+    #         tokens.insert(i-1, 'est')
+    #     i += 1
     while '' in tokens:
         tokens.remove('')
     return tokens

@@ -15,10 +15,11 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from color_dataset import (ColorDataset, WeakSup_ColorDataset)
 
-from utils import (AverageMeter, save_checkpoint, _reparameterize, loss_multimodal, loss_text_unimodal, loss_image_unimodal)
+from utils import (AverageMeter, save_checkpoint, _reparameterize, loss_multimodal, loss_text_unimodal, loss_image_unimodal, loss_multimodal_only)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
                     ColorEncoder, ColorEncoder_Augmented, MultimodalEncoder, ColorDecoder)
 from forward import (forward_vae_rgb_text, forward_vae_rgb, forward_vae_text)
+# from loss import (VAE_loss)
 
 SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
@@ -44,12 +45,13 @@ if __name__ == '__main__':
                         help='number of training epochs [default: 50]')
     parser.add_argument('--alpha', type=float, default=1,
                         help='lambda hyperparameter for text loss')
-    parser.add_argument('--beta', type=float, default=1,
+    parser.add_argument('--beta', type=float, default=10,
                         help='lambda hyperparameter for image loss')
     parser.add_argument('--gamma', type=float, default=1,
                         help='lambda hyperparameter for D_KL term loss')
-    parser.add_argument('--weaksup', action='store_true',
-                        help='whether unpaired datasets are trained')
+    parser.add_argument('--weaksup', type=str, default='default',
+                        help='mode for unpaired dataset training')
+    parser.add_argument('--load_dir', type=str, help='where to load (pretrained) checkpoints from')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_iter', type=int, default = 1,
                         help='number of iterations for this setting [default: 1]')
@@ -65,6 +67,7 @@ if __name__ == '__main__':
 
     def train(epoch):
         """Function: train
+        train MVAE with supervised datapoints
         Args:
             param1 (int) epoch: training epoch
         Returns:
@@ -79,15 +82,22 @@ if __name__ == '__main__':
 
         loss_meter = AverageMeter()
         pbar = tqdm(total=len(train_xy_loader))
-        for batch_idx, (y_rgb, x_tgt, x_src, x_len) in enumerate(train_xy_loader):
+        for batch_idx, (y_rgb, x_src, x_tgt, x_len) in enumerate(train_xy_loader):
             batch_size = y_rgb.size(0)
+            y_rgb = y_rgb.to(device).float()
+            x_src = x_src.to(device)
+            x_tgt = x_tgt.to(device)
+            x_len = x_len.to(device)
 
             models_xy = (vae_txt_enc, vae_rgb_enc, vae_mult_enc, vae_txt_dec, vae_rgb_dec)
-            out = forward_vae_rgb_text((y_rgb, x_tgt, x_src, x_len), models_multimodal)
+            out = forward_vae_rgb_text((y_rgb, x_src, x_tgt, x_len), models_xy)
             out['pad_index'] = pad_index
 
             # compute loss
-            loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta)
+            # if args.weaksup == 'posttrain':
+            #     loss = loss_multimodal_only(out, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
+            # if args.weaksup == 'default':
+            loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
 
             # update based on loss
             loss_meter.update(loss.item(), batch_size)
@@ -105,7 +115,7 @@ if __name__ == '__main__':
         return loss_meter.avg
 
     def train_weakly_supervised(epoch):
-        """Function: train
+        """Function: train_weakly_supervised
         Args:
             param1 (int) epoch: training epoch
         Returns:
@@ -130,18 +140,20 @@ if __name__ == '__main__':
         pbar = tqdm(total=len(train_y_iterator))
         for batch_i in range(len(train_y_iterator)):
             try:
-                data_xy_args = list(next(train_xy_iterator))
+                y_rgb, x_src, x_tgt, x_len = next(train_xy_iterator)
+                data_xy_args = [y_rgb, x_src, x_tgt, x_len]
             except StopIteration:
                 train_xy_iterator = train_xy_loader.__iter__()
-                data_xy_args = list(next(train_xy_iterator))
+                y_rgb, x_src, x_tgt, x_len = next(train_xy_iterator)
+                data_xy_args = [y_rgb, x_src, x_tgt, x_len]
 
             try:
-                _, x_tgt, x_src, x_len = next(train_x_iterator)
-                data_x_args = [x_tgt, x_src, x_len]
+                _, x_src, x_tgt, x_len = next(train_x_iterator)
+                data_x_args = [x_src, x_tgt, x_len]
             except StopIteration:
                 train_x_iterator = train_x_loader.__iter__()
-                _, x_tgt, x_src, x_len = next(train_x_iterator)
-                data_x_args = [x_tgt, x_src, x_len]
+                _, x_src, x_tgt, x_len = next(train_x_iterator)
+                data_x_args = [x_src, x_tgt, x_len]
 
             try:
                 y, _, _, _ = next(train_y_iterator)
@@ -172,7 +184,10 @@ if __name__ == '__main__':
             output_xy_dict['pad_index'] = pad_index
             output_x_dict['pad_index'] = pad_index
 
-            loss_xy = loss_multimodal(output_xy_dict, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
+            if args.weaksup == '4terms':
+                loss_xy = loss_multimodal_only(output_xy_dict, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
+            if args.weaksup == '6terms':
+                loss_xy = loss_multimodal(output_xy_dict, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
             loss_x = loss_text_unimodal(output_x_dict, batch_size, alpha=args.alpha, gamma=args.gamma)
             loss_y = loss_image_unimodal(output_y_dict, batch_size, beta=args.beta, gamma=args.gamma)
 
@@ -192,7 +207,6 @@ if __name__ == '__main__':
         
         return loss_meter.avg
 
-
     def test(epoch):
         vae_emb.eval()
         vae_rgb_enc.eval()
@@ -205,11 +219,11 @@ if __name__ == '__main__':
             loss_meter = AverageMeter()
             pbar = tqdm(total=len(test_loader))
 
-            models_xy = (vae_txt_enc, vae_rgb_enc, vae_mult_enc, vae_txt_dec, vae_rgb_dec)
-            models_x = (vae_txt_enc, vae_txt_dec)
-            models_y = (vae_rgb_enc, vae_rgb_dec)
+            # models_xy = (vae_txt_enc, vae_rgb_enc, vae_mult_enc, vae_txt_dec, vae_rgb_dec)
+            # models_x = (vae_txt_enc, vae_txt_dec)
+            # models_y = (vae_rgb_enc, vae_rgb_dec)
 
-            for batch_idx, (y_rgb, x_tgt, x_src, x_len) in enumerate(test_loader):
+            for batch_idx, (y_rgb, x_src, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_src.size(0) 
                 y_rgb = y_rgb.to(device).float()
                 x_src = x_src.to(device)
@@ -249,6 +263,57 @@ if __name__ == '__main__':
                 print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
         return loss_meter.avg
 
+    def load_pretrained_checkpoint(iter_num, args, folder='./'):
+        rgb_best_filename = 'checkpoint_vae_pretrain_{}_alpha={}_beta={}_rgb_best'.format(iter_num,
+                                                                                    args.alpha,
+                                                                                    args.beta)
+        txt_best_filename = 'checkpoint_vae_pretrain_{}_alpha={}_beta={}_txt_best'.format(iter_num,
+                                                                                    args.alpha,
+                                                                                    args.beta)
+        print("\nloading pretrained checkpoint file:")
+        print("{}.pth.tar ...\n".format(rgb_best_filename)) 
+        print("{}.pth.tar ...\n".format(txt_best_filename))
+
+        rgb_checkpoint = torch.load(os.path.join(folder, rgb_best_filename + '.pth.tar'))
+        txt_checkpoint = torch.load(os.path.join(folder, txt_best_filename + '.pth.tar'))
+
+        rgb_epoch = rgb_checkpoint['epoch']
+        txt_epoch = txt_checkpoint['epoch']
+
+        vae_rgb_enc_sd = rgb_checkpoint['vae_rgb_enc']
+        vae_rgb_dec_sd = rgb_checkpoint['vae_rgb_dec']
+        
+        vae_emb_sd = txt_checkpoint['vae_emb']
+        vae_txt_enc_sd = txt_checkpoint['vae_txt_enc']
+        vae_txt_dec_sd = txt_checkpoint['vae_txt_dec']
+        
+        vocab = rgb_checkpoint['vocab']
+        vocab_size = rgb_checkpoint['vocab_size']
+        args = rgb_checkpoint['cmd_line_args']
+
+        w2i = vocab['w2i']
+        pad_index = w2i[PAD_TOKEN]
+
+        vae_emb = TextEmbedding(vocab_size)
+        vae_txt_enc = TextEncoder(vae_emb, args.z_dim)
+        vae_txt_dec = TextDecoder(vae_emb, args.z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
+                                    w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
+        vae_rgb_dec = ColorDecoder(args.z_dim)
+        vae_rgb_enc = ColorEncoder(args.z_dim)
+
+        vae_emb.load_state_dict(vae_emb_sd)
+        vae_txt_enc.load_state_dict(vae_txt_enc_sd)
+        vae_txt_dec.load_state_dict(vae_txt_dec_sd)
+        vae_rgb_enc.load_state_dict(vae_rgb_enc_sd)
+        vae_rgb_dec.load_state_dict(vae_rgb_dec_sd)
+
+        return vae_emb, vae_txt_enc, vae_txt_dec, vae_rgb_enc, vae_rgb_dec
+
+
+#########################################
+# Training script
+#########################################
+
     print("=== begin training ===")
     print("args: sup_lvl: {} alpha: {} beta: {} seed: {} context condition?: {} cuda?: {} weaksup: {}".format(args.sup_lvl,
                                                                                     args.alpha,
@@ -258,9 +323,13 @@ if __name__ == '__main__':
                                                                                     args.cuda,
                                                                                     args.weaksup))
 
+    assert args.weaksup in ['default', '6terms', '4terms', 'posttrain']
+    if args.weaksup == 'posttrain':
+        assert args.load_dir != None
+
     # repeat training on same model w/ different random seeds for |num_iter| times
-    for i in range(1, args.num_iter + 1):
-        print("\nTraining iteration {} for supervision level {}".format(i, args.sup_lvl))
+    for iter_num in range(1, args.num_iter + 1):
+        print("\nTraining iteration {} for supervision level {}".format(iter_num, args.sup_lvl))
         
         # set random seeds
         random_iter_seed = random.randint(0, 500)
@@ -287,7 +356,8 @@ if __name__ == '__main__':
         test_dataset = ColorDataset(vocab=vocab, split='Validation', context_condition=args.context_condition)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
-        if args.weaksup:
+        if args.weaksup not in ('default', 'posttrain'):
+            print("Initialize datasets for unpaired datapoints.")
             unpaired_dataset = ColorDataset(vocab=vocab, split='Train', context_condition=args.context_condition)
             train_x_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
             train_y_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
@@ -296,15 +366,18 @@ if __name__ == '__main__':
         z_dim = args.z_dim
 
         # Define model
-        vae_emb = TextEmbedding(vocab_size)
-        vae_rgb_enc = ColorEncoder(z_dim)
-        vae_txt_enc = TextEncoder(vae_emb, z_dim)
+        if args.weaksup == 'posttrain':
+            vae_emb, vae_txt_enc, vae_txt_dec, vae_rgb_enc, vae_rgb_dec = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
+        else:
+            vae_emb = TextEmbedding(vocab_size)
+            vae_rgb_enc = ColorEncoder(z_dim)
+            vae_txt_enc = TextEncoder(vae_emb, z_dim)
+            vae_rgb_dec = ColorDecoder(z_dim)
+            vae_txt_dec = TextDecoder(vae_emb, z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
+                                        w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
         vae_mult_enc = MultimodalEncoder(vae_emb, z_dim)
-        vae_rgb_dec = ColorDecoder(z_dim)
-        vae_txt_dec = TextDecoder(vae_emb, z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
-                                    w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
 
-        # Mount devices unto GPU
+        # Mount models unto GPU
         vae_emb = vae_emb.to(device)
         vae_rgb_enc = vae_rgb_enc.to(device)
         vae_txt_enc = vae_txt_enc.to(device)
@@ -327,7 +400,7 @@ if __name__ == '__main__':
         track_loss = np.zeros((args.epochs, 2))
         
         for epoch in range(1, args.epochs + 1):
-            train_loss = train(epoch) if not args.weaksup else train_weakly_supervised(epoch)
+            train_loss = train(epoch) if args.weaksup in ('default', 'posttrain') else train_weakly_supervised(epoch)
             test_loss = test(epoch)
 
             is_best = test_loss < best_loss
@@ -350,8 +423,15 @@ if __name__ == '__main__':
                 'vocab_size': vocab_size,
                 'seed': random_iter_seed
             }, is_best, folder=args.out_dir,
-            filename='checkpoint_vae_{}_{}_alpha={}_beta={}'.format(args.sup_lvl, i, args.alpha, args.beta))
+            filename='checkpoint_vae_{}_{}_alpha={}_beta={}'.format(args.sup_lvl, iter_num, args.alpha, args.beta))
             np.save(os.path.join(args.out_dir,
-                'loss_{}_{}.npy'.format(args.sup_lvl, i)), track_loss)
+                'loss_{}_{}.npy'.format(args.sup_lvl, iter_num)), track_loss)
 
-
+    print("\nargs:: sup_lvl: {} alpha: {} beta: {} seed: {} context condition?: {} cuda?: {} weaksup: {}".format(args.sup_lvl,
+                                                                                    args.alpha,
+                                                                                    args.beta,
+                                                                                    args.seed,
+                                                                                    args.context_condition,
+                                                                                    args.cuda,
+                                                                                    args.weaksup))
+    print("=== training complete ===")
