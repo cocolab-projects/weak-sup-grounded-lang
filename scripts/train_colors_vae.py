@@ -94,10 +94,10 @@ if __name__ == '__main__':
             out['pad_index'] = pad_index
 
             # compute loss
-            # if args.weaksup == 'posttrain':
-            #     loss = loss_multimodal_only(out, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
-            # if args.weaksup == 'default':
-            loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
+            if args.weaksup == 'posttrain':
+                loss = loss_multimodal_only(out, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
+            if args.weaksup == 'default':
+                loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
 
             # update based on loss
             loss_meter.update(loss.item(), batch_size)
@@ -113,6 +113,80 @@ if __name__ == '__main__':
             print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
         
         return loss_meter.avg
+
+    def train_coin(epoch):
+        """Function: train_weakly_supervised
+        Args:
+            param1 (int) epoch: training epoch
+        Returns:
+            (float): training loss over epoch
+        """
+        vae_emb.train()
+        vae_rgb_enc.train()
+        vae_txt_enc.train()
+        vae_mult_enc.train()
+        vae_rgb_dec.train()
+        vae_txt_dec.train()
+
+        train_xy_iterator = train_xy_loader.__iter__()
+
+        models_xy = (vae_txt_enc, vae_rgb_enc, vae_mult_enc, vae_txt_dec, vae_rgb_dec)
+        models_x = (vae_txt_enc, vae_txt_dec)
+        models_y = (vae_rgb_enc, vae_rgb_dec)
+        
+        supervised_loss_meter = AverageMeter()
+        unpaired_loss_meter = AverageMeter()
+        supervision_info = []
+        pbar = tqdm(total=len(train_xy_iterator))
+        for batch_idx, (y_rgb, x_src, x_tgt, x_len) in enumerate(train_xy_loader):
+            batch_size = y_rgb.size(0)
+            y_rgb = y_rgb.to(device).float()
+            x_src = x_src.to(device)
+            x_tgt = x_tgt.to(device)
+            x_len = x_len.to(device)
+
+            supervised = np.random.binomial(1, args.sup_lvl)
+            supervision_info.append(supervised)
+            if supervised:
+                out = forward_vae_rgb_text((y_rgb, x_src, x_tgt, x_len), models_xy)
+                out['pad_index'] = pad_index
+
+                loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                supervised_loss_meter.update(loss.item(), batch_size)
+            else:
+                data_x_args = [x_src, x_tgt, x_len]
+                data_y_args = [y_rgb]
+
+                output_y_dict = forward_vae_rgb(data_y_args, models_y)
+                output_x_dict = forward_vae_text(data_x_args, models_x)
+                output_x_dict['pad_index'] = pad_index
+
+                loss_y = loss_image_unimodal(output_y_dict, batch_size, beta=args.beta, gamma=args.gamma)
+                optim_rgb.zero_grad()
+                loss_y.backward()
+                optim_rgb.step()
+
+                loss_x = loss_text_unimodal(output_x_dict, batch_size, alpha=args.alpha, gamma=args.gamma)
+                optim_txt.zero_grad()
+                loss_x.backward()
+                optim_txt.step()
+
+                loss = loss_x + loss_y
+                unpaired_loss_meter.update(loss.item(), batch_size)
+
+            pbar.set_postfix({'sup_loss': supervised_loss_meter.avg, 'unp_loss': unpaired_loss_meter.avg,
+                                'supervision_level': sum(supervision_info) / len(supervision_info)})
+            pbar.update()
+        pbar.close()
+        
+        if epoch % 10 == 0:
+            print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, supervised_loss_meter.avg))
+        
+        return supervised_loss_meter.avg
 
     def train_weakly_supervised(epoch):
         """Function: train_weakly_supervised
@@ -184,15 +258,15 @@ if __name__ == '__main__':
             output_xy_dict['pad_index'] = pad_index
             output_x_dict['pad_index'] = pad_index
 
-            if args.weaksup == '4terms':
+            if args.weaksup.endswith('4terms'):
                 loss_xy = loss_multimodal_only(output_xy_dict, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
-            if args.weaksup == '6terms':
+            if args.weaksup.endswith('6terms'):
                 loss_xy = loss_multimodal(output_xy_dict, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
             loss_x = loss_text_unimodal(output_x_dict, batch_size, alpha=args.alpha, gamma=args.gamma)
             loss_y = loss_image_unimodal(output_y_dict, batch_size, beta=args.beta, gamma=args.gamma)
 
             loss = loss_xy + loss_x + loss_y
-
+            
             loss_meter.update(loss.item(), batch_size)
             optimizer.zero_grad()
             loss.backward()
@@ -323,8 +397,8 @@ if __name__ == '__main__':
                                                                                     args.cuda,
                                                                                     args.weaksup))
 
-    assert args.weaksup in ['default', '6terms', '4terms', 'posttrain']
-    if args.weaksup == 'posttrain':
+    assert args.weaksup in ['default', '6terms', '4terms', 'posttrain', 'coin', 'post-4terms', 'post-6terms']
+    if args.weaksup.startswith('post'):
         assert args.load_dir != None
 
     # repeat training on same model w/ different random seeds for |num_iter| times
@@ -344,7 +418,11 @@ if __name__ == '__main__':
         device = torch.device('cuda' if args.cuda else 'cpu')
 
         # Define training dataset & build vocab
-        train_dataset = WeakSup_ColorDataset(supervision_level=args.sup_lvl, context_condition=args.context_condition)
+        print("Initialize datasets for supervised datapoints...")
+        if args.weaksup != 'coin':
+            train_dataset = WeakSup_ColorDataset(supervision_level=args.sup_lvl, context_condition=args.context_condition)
+        else:
+            train_dataset = ColorDataset(split='Train', context_condition=args.context_condition)
         train_xy_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
         N_mini_batches = len(train_xy_loader)
         vocab_size = train_dataset.vocab_size
@@ -352,21 +430,21 @@ if __name__ == '__main__':
         w2i = vocab['w2i']
         pad_index = w2i[PAD_TOKEN]
 
-        # Define test dataset
-        test_dataset = ColorDataset(vocab=vocab, split='Validation', context_condition=args.context_condition)
-        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
-
-        if args.weaksup not in ('default', 'posttrain'):
-            print("Initialize datasets for unpaired datapoints.")
+        if args.weaksup not in ('default', 'posttrain', 'coin'):
+            print("Initialize datasets for unpaired datapoints...")
             unpaired_dataset = ColorDataset(vocab=vocab, split='Train', context_condition=args.context_condition)
             train_x_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
             train_y_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
+
+        # Define test dataset
+        test_dataset = ColorDataset(vocab=vocab, split='Validation', context_condition=args.context_condition)
+        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
         # Define latent dimension |z_dim|
         z_dim = args.z_dim
 
         # Define model
-        if args.weaksup == 'posttrain':
+        if args.weaksup.startswith('post'):
             vae_emb, vae_txt_enc, vae_txt_dec, vae_rgb_enc, vae_rgb_dec = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
         else:
             vae_emb = TextEmbedding(vocab_size)
@@ -395,12 +473,29 @@ if __name__ == '__main__':
             vae_rgb_dec.parameters(),
             vae_txt_dec.parameters(),
         ), lr=args.lr)
+        optim_rgb = torch.optim.Adam(
+            chain(
+            vae_rgb_enc.parameters(),
+            vae_rgb_dec.parameters(),
+        ), lr=args.lr)
+
+        optim_txt = torch.optim.Adam(
+            chain(
+            vae_emb.parameters(),
+            vae_txt_enc.parameters(),
+            vae_txt_dec.parameters(),
+        ), lr=args.lr)
 
         best_loss = float('inf')
         track_loss = np.zeros((args.epochs, 2))
         
         for epoch in range(1, args.epochs + 1):
-            train_loss = train(epoch) if args.weaksup in ('default', 'posttrain') else train_weakly_supervised(epoch)
+            if args.weaksup in ('default', 'posttrain'):
+                train_loss = train(epoch)
+            elif args.weaksup == 'coin':
+                train_loss = train_coin(epoch)
+            else:
+                train_loss = train_weakly_supervised(epoch)
             test_loss = test(epoch)
 
             is_best = test_loss < best_loss

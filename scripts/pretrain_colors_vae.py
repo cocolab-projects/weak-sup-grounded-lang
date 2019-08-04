@@ -19,7 +19,6 @@ from utils import (AverageMeter, save_checkpoint, _reparameterize, loss_multimod
 from models import (TextEmbedding, TextEncoder, TextDecoder,
                     ColorEncoder, ColorEncoder_Augmented, MultimodalEncoder, ColorDecoder)
 from forward import (forward_vae_rgb_text, forward_vae_rgb, forward_vae_text)
-# from loss import (VAE_loss)
 
 SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
@@ -107,11 +106,48 @@ if __name__ == '__main__':
         
         loss_meter = AverageMeter()
         pbar = tqdm(total=len(train_x_loader))
-        for batch_idx, (_, x_tgt, x_src, x_len) in enumerate(train_x_loader):
+        for batch_idx, (_, x_src, x_tgt, x_len) in enumerate(train_x_loader):
             batch_size = x_src.size(0)
             x_tgt = x_tgt.to(device)
             x_src = x_src.to(device)
             x_len = x_len.to(device)
+            data_x_args = [x_src, x_tgt, x_len]
+
+            output_x_dict = forward_vae_text(data_x_args, models_x)
+            output_x_dict['pad_index'] = pad_index
+
+            loss_x = loss_text_unimodal(output_x_dict, batch_size, alpha=args.alpha, gamma=args.gamma)
+
+            loss_meter.update(loss_x.item(), batch_size)
+            optimizer.zero_grad()
+            loss_x.backward()
+            optimizer.step()
+
+            pbar.set_postfix({'txt_loss': loss_meter.avg})
+            pbar.update()
+        pbar.close()
+
+        if epoch % 10 == 0:
+            print('====> Text Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
+        
+        return loss_meter.avg
+
+    def train_text_only_rev(epoch, optimizer):
+        vae_emb.train()
+        vae_txt_enc.train()
+        vae_txt_dec.train()
+
+        models_x = (vae_txt_enc, vae_txt_dec)
+        
+        loss_meter = AverageMeter()
+        pbar = tqdm(total=len(train_x_loader))
+        for batch_idx, (_, x_src, x_tgt, x_len) in enumerate(train_x_loader):
+            batch_size = x_src.size(0)
+            x_tgt = x_tgt.to(device)
+            x_src = x_src.to(device)
+            x_len = x_len.to(device)
+
+            ###### !!!!! INPUT ARGUMENTS (x_src, x_tgt) IN REVERSE ORDER !!!!!
             data_x_args = [x_tgt, x_src, x_len]
 
             output_x_dict = forward_vae_text(data_x_args, models_x)
@@ -155,7 +191,7 @@ if __name__ == '__main__':
                 x_src = x_src.to(device)
                 x_len = x_len.to(device)
 
-                data_x_args = [x_tgt, x_src, x_len]
+                data_x_args = [x_tgt, x_src, x_len] if args.weaksup.endswith('reverse') else [x_src, x_tgt, x_len]
                 data_y_args = [y_rgb]
 
                 output_x_dict = forward_vae_text(data_x_args, models_x)
@@ -171,17 +207,18 @@ if __name__ == '__main__':
                 pbar.update()
             pbar.close()
             if epoch % 10 == 0:
-                print('====> Test Epoch: {}\tRGB Test Loss: {:.4f} Text Test Loss: {:.4f}'.format(epoch, text_loss_meter.avg, rgb_loss_meter.avg))
+                print('====> Test Epoch: {}\tRGB Test Loss: {:.4f} Text Test Loss: {:.4f}'.format(epoch, rgb_loss_meter.avg, text_loss_meter.avg))
         return text_loss_meter.avg, rgb_loss_meter.avg
 
     print("=== begin pretraining ===")
-    print("args: alpha: {} beta: {} seed: {} context condition?: {} cuda?: {}".format(  args.alpha,
+    print("args: alpha: {} beta: {} seed: {} context condition?: {} cuda?: {} weaksup? {}".format(  args.alpha,
                                                                                         args.beta,
                                                                                         args.seed,
                                                                                         args.context_condition,
-                                                                                        args.cuda))
+                                                                                        args.cuda,
+                                                                                        args.weaksup))
 
-    assert args.weaksup in ['default', '6terms', '4terms', 'pretrain']
+    assert args.weaksup.startswith('pretrain')
 
     # repeat training on same model w/ different random seeds for |num_iter| times
     for i in range(1, args.num_iter + 1):
@@ -252,7 +289,7 @@ if __name__ == '__main__':
         
         for epoch in range(1, args.epochs + 1):
             rgb_train_loss = train_rgb_only(epoch, optim_rgb)
-            txt_train_loss = train_text_only(epoch, optim_txt)
+            txt_train_loss = train_text_only(epoch, optim_txt) if not args.weaksup.endswith('reverse') else train_text_only_rev(epoch, optim_txt)
             txt_test_loss, rgb_test_loss = test(epoch)
 
             rgb_is_best = rgb_test_loss < rgb_best_loss
@@ -261,7 +298,7 @@ if __name__ == '__main__':
             txt_best_loss = min(txt_test_loss, txt_best_loss)
             rgb_track_loss[epoch - 1, 0] = rgb_train_loss
             rgb_track_loss[epoch - 1, 1] = rgb_test_loss
-            txt_track_loss[epoch - 1, 0] = txt_test_loss
+            txt_track_loss[epoch - 1, 0] = txt_train_loss
             txt_track_loss[epoch - 1, 1] = txt_test_loss
             
             save_checkpoint({

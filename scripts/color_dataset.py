@@ -318,8 +318,8 @@ class Colors_ReferenceGame(data.Dataset):
         return self.rgb_targets[index], self.d1_RGBs[index], self.d2_RGBs[index], self.txt_sources[index], self.txt_targets[index], self.lengths[index]
 
 class WeakSup_ColorReference(Colors_ReferenceGame):
-    def __init__(self, vocab=None, supervision_level=1.0, context_condition='far'):
-        super(WeakSup_ColorReference, self).__init__(vocab=vocab, split='Train', context_condition=context_condition)
+    def __init__(self, vocab=None, split='Train', supervision_level=1.0, context_condition='far'):
+        super(WeakSup_ColorReference, self).__init__(vocab=vocab, split=split, context_condition=context_condition)
         
         self.random_state = np.random.RandomState(18192)
         n = len(self.txt_sources)
