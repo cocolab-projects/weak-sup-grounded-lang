@@ -362,14 +362,14 @@ if __name__ == '__main__':
         vae_txt_enc_sd = txt_checkpoint['vae_txt_enc']
         vae_txt_dec_sd = txt_checkpoint['vae_txt_dec']
         
-        vocab = rgb_checkpoint['vocab']
-        vocab_size = rgb_checkpoint['vocab_size']
+        pre_vocab = rgb_checkpoint['vocab']
+        pre_vocab_size = rgb_checkpoint['vocab_size']
         args = rgb_checkpoint['cmd_line_args']
 
-        w2i = vocab['w2i']
+        w2i = pre_vocab['w2i']
         pad_index = w2i[PAD_TOKEN]
 
-        vae_emb = TextEmbedding(vocab_size)
+        vae_emb = TextEmbedding(pre_vocab_size)
         vae_txt_enc = TextEncoder(vae_emb, args.z_dim)
         vae_txt_dec = TextDecoder(vae_emb, args.z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
                                     w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
@@ -382,7 +382,7 @@ if __name__ == '__main__':
         vae_rgb_enc.load_state_dict(vae_rgb_enc_sd)
         vae_rgb_dec.load_state_dict(vae_rgb_dec_sd)
 
-        return vae_emb, vae_txt_enc, vae_txt_dec, vae_rgb_enc, vae_rgb_dec
+        return vae_emb, vae_txt_enc, vae_txt_dec, vae_rgb_enc, vae_rgb_dec, pre_vocab
 
 
 #########################################
@@ -468,11 +468,12 @@ if __name__ == '__main__':
 
         if args.weaksup.startswith('post'):
             if 'only' not in args.weaksup:
-                vae_emb, vae_txt_enc, vae_txt_dec, vae_rgb_enc, vae_rgb_dec = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
+                vae_emb, vae_txt_enc, vae_txt_dec, vae_rgb_enc, vae_rgb_dec, pre_vocab = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
             elif args.weaksup.startswith('post-only-rgb'):
-                _, _, _, vae_rgb_enc, vae_rgb_dec = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
+                _, _, _, vae_rgb_enc, vae_rgb_dec, pre_vocab = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
             elif args.weaksup.startswith('post-only-text'):
-                vae_emb, vae_txt_enc, vae_txt_dec, _, _ = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
+                vae_emb, vae_txt_enc, vae_txt_dec, _, _, pre_vocab = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
+            assert pre_vocab == vocab
         vae_mult_enc = MultimodalEncoder(vae_emb, z_dim)
 
         # Mount models unto GPU
