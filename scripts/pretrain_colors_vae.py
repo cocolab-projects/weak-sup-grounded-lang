@@ -211,7 +211,8 @@ if __name__ == '__main__':
         return text_loss_meter.avg, rgb_loss_meter.avg
 
     print("=== begin pretraining ===")
-    print("args: alpha: {} beta: {} seed: {} context condition?: {} cuda?: {} weaksup? {}".format(  args.alpha,
+    print("args: alpha: {} beta: {} seed: {} context condition?: {} cuda?: {} weaksup? {}".format(
+                                                                                        args.alpha,
                                                                                         args.beta,
                                                                                         args.seed,
                                                                                         args.context_condition,

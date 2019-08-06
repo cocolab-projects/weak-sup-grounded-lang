@@ -94,9 +94,9 @@ if __name__ == '__main__':
             out['pad_index'] = pad_index
 
             # compute loss
-            if args.weaksup == 'posttrain':
+            if args.weaksup.endswith('2terms'):
                 loss = loss_multimodal_only(out, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
-            if args.weaksup == 'default':
+            else:
                 loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
 
             # update based on loss
@@ -266,7 +266,7 @@ if __name__ == '__main__':
             loss_y = loss_image_unimodal(output_y_dict, batch_size, beta=args.beta, gamma=args.gamma)
 
             loss = loss_xy + loss_x + loss_y
-            
+
             loss_meter.update(loss.item(), batch_size)
             optimizer.zero_grad()
             loss.backward()
@@ -345,8 +345,9 @@ if __name__ == '__main__':
                                                                                     args.alpha,
                                                                                     args.beta)
         print("\nloading pretrained checkpoint file:")
-        print("{}.pth.tar ...\n".format(rgb_best_filename)) 
+        print("{}.pth.tar ...".format(rgb_best_filename)) 
         print("{}.pth.tar ...\n".format(txt_best_filename))
+        print("Post training version {}".format(args.weaksup))
 
         rgb_checkpoint = torch.load(os.path.join(folder, rgb_best_filename + '.pth.tar'))
         txt_checkpoint = torch.load(os.path.join(folder, txt_best_filename + '.pth.tar'))
@@ -397,7 +398,21 @@ if __name__ == '__main__':
                                                                                     args.cuda,
                                                                                     args.weaksup))
 
-    assert args.weaksup in ['default', '6terms', '4terms', 'posttrain', 'coin', 'post-4terms', 'post-6terms']
+    assert args.weaksup in [
+                            'default',
+                            '6terms',
+                            '4terms',
+                            'post-nounp-2terms',
+                            'post-nounp-4terms',
+                            'coin',
+                            'post-4terms',
+                            'post-6terms',
+                            'post-only-rgb-4terms',
+                            'post-only-rgb-6terms',
+                            'post-only-text-4terms',
+                            'post-only-text-6terms',
+                            ]
+    
     if args.weaksup.startswith('post'):
         assert args.load_dir != None
 
@@ -430,7 +445,7 @@ if __name__ == '__main__':
         w2i = vocab['w2i']
         pad_index = w2i[PAD_TOKEN]
 
-        if args.weaksup not in ('default', 'posttrain', 'coin'):
+        if args.weaksup not in ('default', 'coin') and not args.weaksup.startswith('post-nounp'):
             print("Initialize datasets for unpaired datapoints...")
             unpaired_dataset = ColorDataset(vocab=vocab, split='Train', context_condition=args.context_condition)
             train_x_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
@@ -444,15 +459,20 @@ if __name__ == '__main__':
         z_dim = args.z_dim
 
         # Define model
+        vae_emb = TextEmbedding(vocab_size)
+        vae_rgb_enc = ColorEncoder(z_dim)
+        vae_txt_enc = TextEncoder(vae_emb, z_dim)
+        vae_rgb_dec = ColorDecoder(z_dim)
+        vae_txt_dec = TextDecoder(vae_emb, z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
+                                    w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
+
         if args.weaksup.startswith('post'):
-            vae_emb, vae_txt_enc, vae_txt_dec, vae_rgb_enc, vae_rgb_dec = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
-        else:
-            vae_emb = TextEmbedding(vocab_size)
-            vae_rgb_enc = ColorEncoder(z_dim)
-            vae_txt_enc = TextEncoder(vae_emb, z_dim)
-            vae_rgb_dec = ColorDecoder(z_dim)
-            vae_txt_dec = TextDecoder(vae_emb, z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
-                                        w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
+            if 'only' not in args.weaksup:
+                vae_emb, vae_txt_enc, vae_txt_dec, vae_rgb_enc, vae_rgb_dec = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
+            elif args.weaksup.startswith('post-only-rgb'):
+                _, _, _, vae_rgb_enc, vae_rgb_dec = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
+            elif args.weaksup.startswith('post-only-text'):
+                vae_emb, vae_txt_enc, vae_txt_dec, _, _ = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
         vae_mult_enc = MultimodalEncoder(vae_emb, z_dim)
 
         # Mount models unto GPU
@@ -490,7 +510,7 @@ if __name__ == '__main__':
         track_loss = np.zeros((args.epochs, 2))
         
         for epoch in range(1, args.epochs + 1):
-            if args.weaksup in ('default', 'posttrain'):
+            if args.weaksup == 'default' or args.weaksup.startswith('post-nounp'):
                 train_loss = train(epoch)
             elif args.weaksup == 'coin':
                 train_loss = train_coin(epoch)
