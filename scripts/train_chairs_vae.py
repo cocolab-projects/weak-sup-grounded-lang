@@ -77,7 +77,7 @@ if __name__ == '__main__':
 
         loss_meter = AverageMeter()
         pbar = tqdm(total=len(train_loader))
-        for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len) in enumerate(train_loader):
+        for batch_idx, (tgt_chair, d1_chair, d2_chair, x_src, x_tgt, x_len) in enumerate(train_loader):
             batch_size = x_src.size(0) 
             tgt_chair = tgt_chair.to(device).float()
             x_src = x_src.to(device)
@@ -124,69 +124,6 @@ if __name__ == '__main__':
         
         return loss_meter.avg
 
-    def train_weakly_supervised(epoch):
-        """Function: train
-        Args:
-            param1 (int) epoch: training epoch
-        Returns:
-            (float): training loss over epoch
-        """
-        vae_emb.train()
-        vae_img_enc.train()
-        vae_txt_enc.train()
-        vae_mult_enc.train()
-        vae_img_dec.train()
-        vae_txt_dec.train()
-
-        loss_meter = AverageMeter()
-        pbar = tqdm(total=len(train_loader))
-
-        for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len)  in enumerate(train_loader):
-            batch_size = x_src.size(0) 
-            tgt_chair = tgt_chair.to(device).float()
-            x_src = x_src.to(device)
-            x_tgt = x_tgt.to(device)
-            x_len = x_len.to(device)
-
-            # Encode to |z|
-            z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
-            z_y_mu, z_y_logvar = vae_img_enc(tgt_chair)
-            z_xy_mu, z_xy_logvar = vae_mult_enc(tgt_chair, x_src, x_len)
-
-            # sample via reparametrization
-            z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
-            z_sample_y = _reparameterize(z_y_mu, z_y_logvar)
-            z_sample_xy = _reparameterize(z_xy_mu, z_xy_logvar)
-
-            # "predictions"
-            y_mu_z_y = vae_img_dec(z_sample_y)
-            y_mu_z_xy = vae_img_dec(z_sample_xy)
-            x_logit_z_x = vae_txt_dec(z_sample_x, x_src, x_len)
-            x_logit_z_xy = vae_txt_dec(z_sample_xy, x_src, x_len)
-
-            out = {'z_x_mu': z_x_mu, 'z_x_logvar': z_x_logvar,
-                    'z_y_mu': z_y_mu, 'z_y_logvar': z_y_logvar,
-                    'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
-                    'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
-                    'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                    'y': tgt_chair, 'x': x_tgt, 'pad_index': pad_index}
-
-            # compute loss
-            loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta)
-
-            loss_meter.update(loss.item(), batch_size)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            pbar.set_postfix({'loss': loss_meter.avg})
-            pbar.update()
-        pbar.close()
-            
-        if epoch % 10 == 0:
-            print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
-        
-        return loss_meter.avg
 
 
     def test(epoch):
@@ -201,7 +138,7 @@ if __name__ == '__main__':
             loss_meter = AverageMeter()
             pbar = tqdm(total=len(test_loader))
 
-            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len) in enumerate(test_loader):
+            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_src, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_src.size(0) 
                 tgt_chair = tgt_chair.to(device).float()
                 x_src = x_src.to(device)

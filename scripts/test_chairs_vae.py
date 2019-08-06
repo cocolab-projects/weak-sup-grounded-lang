@@ -33,7 +33,7 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, default=1,
                         help='lambda argument for text loss')
     parser.add_argument('--beta', type=float, default=1,
-                        help='lambda argument for rgb loss')
+                        help='lambda argument for image loss')
     parser.add_argument('--context_condition', type=str, default='all',
                         help='whether the dataset is to include all data')
     parser.add_argument('--seed', type=int, default=42)
@@ -65,7 +65,7 @@ if __name__ == '__main__':
         with torch.no_grad():
             loss_meter = AverageMeter()
             pbar = tqdm(total=len(test_loader))
-            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len) in enumerate(test_loader):
+            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_src, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_src.size(0) 
                 tgt_chair = tgt_chair.to(device).float()
                 x_src = x_src.to(device)
@@ -129,7 +129,8 @@ if __name__ == '__main__':
         diff_tgt = bernoulli_log_pdf(y_1.view(-1).unsqueeze(0), pred_img_cond.view(-1))
         diff_d1 = bernoulli_log_pdf(y_2.view(-1).unsqueeze(0), pred_img_cond.view(-1))
         diff_d2 = bernoulli_log_pdf(y_3.view(-1).unsqueeze(0), pred_img_cond.view(-1))
-        return pred_img_cond, torch.argmax(torch.Tensor([diff_tgt, diff_d1, diff_d2]))
+
+        return pred_img_cond, torch.argmax(torch.Tensor([diff_tgt, diff_d1, diff_d2])).item()
 
     def test_refgame_accuracy(split='Test'):
         """Function: test_refgame_accuracy
@@ -155,7 +156,7 @@ if __name__ == '__main__':
             mean_correct_count, sample_correct_count, cond_correct_count = 0, 0, 0
 
             with tqdm(total=len(test_loader)) as pbar:
-                for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_src, x_len) in enumerate(test_loader):
+                for batch_idx, (tgt_chair, d1_chair, d2_chair, x_src, x_tgt, x_len) in enumerate(test_loader):
                     batch_size = x_src.size(0)
                     tgt_chair = tgt_chair.to(device).float()
                     d1_chair = d1_chair.to(device).float()
@@ -163,6 +164,8 @@ if __name__ == '__main__':
                     x_src = x_src.to(device)
                     x_tgt = x_tgt.to(device)
                     x_len = x_len.to(device)
+
+                    breakpoint()
 
                     # Encode to |z|
                     z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
@@ -175,53 +178,52 @@ if __name__ == '__main__':
                         verbose = i % 25 == 0
                         total_count += 1
 
-                        # mean-based estimator of joint probabilities based on z ~ q(z|x,y)
-                        p_x_y1_sampled = get_sampled_joint_prob(tgt_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i])
-                        p_x_y2_sampled = get_sampled_joint_prob(d1_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i])
-                        p_x_y3_sampled = get_sampled_joint_prob(d2_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i])
+                        # # mean-based estimator of joint probabilities based on z ~ q(z|x,y)
+                        # p_x_y1_sampled = get_sampled_joint_prob(tgt_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i])
+                        # p_x_y2_sampled = get_sampled_joint_prob(d1_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i])
+                        # p_x_y3_sampled = get_sampled_joint_prob(d2_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i])
 
-                        # sample-based estimator of joint probabilities based on z ~ q(z|x,y)
-                        p_x_y1_mean = get_mean_joint_prob(tgt_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i], verbose=verbose)
-                        p_x_y2_mean = get_mean_joint_prob(d1_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i], verbose=verbose)
-                        p_x_y3_mean = get_mean_joint_prob(d2_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i], verbose=verbose)
+                        # # sample-based estimator of joint probabilities based on z ~ q(z|x,y)
+                        # p_x_y1_mean = get_mean_joint_prob(tgt_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i], verbose=verbose)
+                        # p_x_y2_mean = get_mean_joint_prob(d1_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i], verbose=verbose)
+                        # p_x_y3_mean = get_mean_joint_prob(d2_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i], verbose=verbose)
 
                         # choice based on conditional distribution z ~ q(z|x)
                         pred_rgb_cond, cond_choice = get_conditional_choice(tgt_chair[i], d1_chair[i], d2_chair[i], z_x_mu[i])
                         
                         mean_correct, sample_correct, cond_correct = False, False, False
 
-                        if p_x_y1_mean < p_x_y2_mean and p_x_y1_mean < p_x_y3_mean:
-                            mean_correct_count += 1
-                            mean_correct = True
-                        if p_x_y1_sampled < p_x_y2_sampled and p_x_y1_sampled < p_x_y3_sampled:
-                            sample_correct_count += 1
-                            sample_correct = True
-                        if cond_choice == 1:
+                        # if p_x_y1_mean < p_x_y2_mean and p_x_y1_mean < p_x_y3_mean:
+                        #     mean_correct_count += 1
+                        #     mean_correct = True
+                        # if p_x_y1_sampled < p_x_y2_sampled and p_x_y1_sampled < p_x_y3_sampled:
+                        #     sample_correct_count += 1
+                        #     sample_correct = True
+
+                        if cond_choice == 0:
                             cond_correct_count += 1
                             cond_correct = True
                         if verbose:
                             match_text = get_text(vocab['i2w'], x_tgt[i], x_len[i])
                             print("================== ==================")
                             
-                            print("mean-based choice correct? {}".format('T' if mean_correct else 'F'))
-                            print("sample-based choice correct? {}".format('T' if sample_correct else 'F'))
+                            # print("mean-based choice correct? {}".format('T' if mean_correct else 'F'))
+                            # print("sample-based choice correct? {}".format('T' if sample_correct else 'F'))
                             print("conditional distribution-based choice correct? {}".format('T' if cond_correct else 'F'))
-                            print("p_x_y1_sampled: {}, p_x_y2_sampled: {}, p_x_y3_sampled: {}".format(p_x_y1_sampled, p_x_y2_sampled, p_x_y3_sampled))
-                            print("p_x_y1_mean: {}, p_x_y2_mean: {}, p_x_y3_mean: {}".format(p_x_y1_mean, p_x_y2_mean, p_x_y3_mean))
+                            # print("p_x_y1_sampled: {}, p_x_y2_sampled: {}, p_x_y3_sampled: {}".format(p_x_y1_sampled, p_x_y2_sampled, p_x_y3_sampled))
+                            # print("p_x_y1_mean: {}, p_x_y2_mean: {}, p_x_y3_mean: {}".format(p_x_y1_mean, p_x_y2_mean, p_x_y3_mean))
                             
-                            print("\n total count currently: {}".format(total_count))
-                            print("current mean-based choice accuracy: {}".format(mean_correct_count / total_count))
-                            print("current sample-based choice accuracy: {}".format(sample_correct_count / total_count))
+                            # print("\n total count currently: {}".format(total_count))
                             
                     pbar.update()
 
-            mean_acc = mean_correct_count / float(total_count) * 100
-            sample_acc = sample_correct_count / float(total_count) * 100
+            # mean_acc = mean_correct_count / float(total_count) * 100
+            # sample_acc = sample_correct_count / float(total_count) * 100
             cond_acc = cond_correct_count / float(total_count) * 100
-            print('====> Final Sample-based Accuracy: {}/{} = {}%'.format(sample_correct_count, total_count, sample_acc))
-            print('====> Final Mean-based Accuracy: {}/{} = {}%'.format(mean_correct_count, total_count, mean_acc))
+            # print('====> Final Sample-based Accuracy: {}/{} = {}%'.format(sample_correct_count, total_count, sample_acc))
+            # print('====> Final Mean-based Accuracy: {}/{} = {}%'.format(mean_correct_count, total_count, mean_acc))
             print('====> Final Conditional Accuracy: {}/{} = {}%'.format(cond_correct_count, total_count, cond_acc))
-        return mean_acc, sample_acc, cond_acc
+        return cond_acc
 
     def load_checkpoint(folder='./', filename='model_best'):
         print("\nloading checkpoint file: {}.pth.tar ...\n".format(filename)) 
@@ -258,42 +260,6 @@ if __name__ == '__main__':
 
         return epoch, args, vae_emb, vae_img_enc, vae_txt_enc, vae_mult_enc, vae_img_dec, vae_txt_dec, vocab, vocab_size, pad_index
 
-    def sanity_check(split='Test'):
-
-        print("performing sanity checks ...")
-
-        vae_emb.eval()
-        vae_rgb_enc.eval()
-        vae_txt_enc.eval()
-        vae_mult_enc.eval()
-        vae_rgb_dec.eval()
-        vae_txt_dec.eval()
-
-        example = torch.tensor([[70., 200., 70.],
-                                [36, 220, 36],
-                                [180, 50, 180],
-                                [150, 150, 150],
-                                [30, 30, 30],
-                                [190, 30, 30]
-                                ]).to(device)
-        z_y_mu, z_y_logvar = vae_rgb_enc(example)
-        y_mu_z_y = vae_rgb_dec(z_y_mu)
-        print("encoded colors: {}".format(example))
-        print("decoded colors: {}\n".format(y_mu_z_y * 255.0))
-
-        example = torch.tensor([[528, 13],
-                                [528, 0],
-                                [528, 7]]
-                                )
-        z_x_mu, z_x_logvar = vae_txt_enc(example.to(device), torch.LongTensor([2,2,2]))
-        decoded_colors = vae_rgb_dec(z_x_mu)
-        sampled_colors = vae_rgb_dec(torch.randn_like(z_x_mu) * torch.exp(0.5 * z_x_logvar) + z_x_mu)
-        print("encoded tests: {}".format(example))
-        print("decoded colors: {}\n".format(decoded_colors))
-        print("sampled colors: {}\n".format(sampled_colors))
-
-        return
-
     print("=== begin testing ===")
 
     losses, mean_accuracies, sample_accuracies, cond_accuracies, best_epochs = [], [], [], [], []
@@ -316,29 +282,28 @@ if __name__ == '__main__':
         # sanity check
         print("iteration {} with alpha {} and beta {}\n".format(iter_num, train_args.alpha, train_args.beta))
         print("best training epoch: {}".format(epoch))
-        # sanity_check()
 
         test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Test', context_condition=args.context_condition)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
 
         # compute test loss & reference game accuracy
         # losses.append(test_loss())
-        mean_acc, sample_acc, cond_acc = test_refgame_accuracy()
+        cond_acc = test_refgame_accuracy()
         
-        mean_accuracies.append(mean_acc)
-        sample_accuracies.append(sample_acc)
+        # mean_accuracies.append(mean_acc)
+        # sample_accuracies.append(sample_acc)
         cond_accuracies.append(cond_acc)
         best_epochs.append(epoch)
 
     # losses = np.array(losses)
-    mean_accuracies = np.array(mean_accuracies)
-    sample_accuracies = np.array(sample_accuracies)
+    # mean_accuracies = np.array(mean_accuracies)
+    # sample_accuracies = np.array(sample_accuracies)
     cond_accuracies = np.array(cond_accuracies)
 
     # save files as np arrays
     print("saving file to {} ...".format(args.out_dir))
-    np.save(os.path.join(args.out_dir, 'sample_accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), sample_accuracies)
-    np.save(os.path.join(args.out_dir, 'mean_accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), mean_accuracies)
+    # np.save(os.path.join(args.out_dir, 'sample_accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), sample_accuracies)
+    # np.save(os.path.join(args.out_dir, 'mean_accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), mean_accuracies)
     np.save(os.path.join(args.out_dir, 'cond_accuracies_{}_alpha={}_beta={}.npy'.format(args.sup_lvl, args.alpha, args.beta)), cond_accuracies)
     print("... saving complete.")
 

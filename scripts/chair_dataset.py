@@ -280,7 +280,7 @@ class Chairs_ReferenceGame(data.Dataset):
         inputs = torch.from_numpy(inputs).long()
         targets = torch.from_numpy(targets).long()
 
-        return trans(chair_a), trans(chair_b), trans(chair_c), targets, inputs, length
+        return trans(chair_a), trans(chair_b), trans(chair_c), inputs, targets, length
 
 class Weaksup_Chairs_Reference(Chairs_ReferenceGame):
     def __init__(self, vocab=None, transform=None, supervision_level=1.0, split='Train', context_condition='all'):
