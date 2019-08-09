@@ -43,7 +43,7 @@ if __name__ == '__main__':
         assert vocab != None
         print("Computing final test loss on newly seen dataset...")
 
-        test_dataset = Colors_ReferenceGame(vocab=vocab, split=split, hard=args.hard)
+        test_dataset = Colors_ReferenceGame(vocab=vocab, split=split)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
 
         model.eval()
@@ -76,7 +76,7 @@ if __name__ == '__main__':
         assert vocab != None
         print("Computing final accuracy for reference game settings...")
 
-        ref_dataset = Colors_ReferenceGame(vocab, split='Test', hard=args.hard)
+        ref_dataset = Colors_ReferenceGame(vocab, split='Test')
         ref_loader = DataLoader(ref_dataset, shuffle=False, batch_size=100)
 
         model.eval()

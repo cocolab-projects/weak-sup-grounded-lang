@@ -12,8 +12,8 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torchvision import transforms
 from torchvision.utils import save_image
-from chair_dataset import (Chairs_ReferenceGame, Weaksup_Chairs_Reference)
 
 from utils import (AverageMeter, save_checkpoint, _reparameterize, loss_multimodal)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
@@ -31,6 +31,7 @@ if __name__ == '__main__':
     parser.add_argument('out_dir', type=str, help='where to save checkpoints')
     parser.add_argument('sup_lvl', type=float, default = 1.0,
                         help='how much of the data to supervise [default: 1.0]')
+    parser.add_argument('--dataset', type=str, default='chairs')
     parser.add_argument('--z_dim', type=int, default=100,
                         help='number of latent dimension [default = 100]')
     parser.add_argument('--dropout', type=float, default=0.,
@@ -50,10 +51,15 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_iter', type=int, default = 1,
                         help='number of iterations for this setting [default: 1]')
-    parser.add_argument('--context_condition', type=str, default='all',
+    parser.add_argument('--context_condition', type=str, default='far',
                         help='whether the dataset is to include all data')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
+
+    if args.dataset == 'chairs':
+        from chair_dataset import (Chairs_ReferenceGame, Weaksup_Chairs_Reference)
+    if args.dataset == 'critters':
+        from critter_dataset import (Critters_ReferenceGame, Weaksup_Critters_Reference)
 
     if not os.path.isdir(args.out_dir):
         os.makedirs(args.out_dir)
@@ -203,7 +209,15 @@ if __name__ == '__main__':
         device = torch.device('cuda' if args.cuda else 'cpu')
 
         # Define training dataset & build vocab
-        train_dataset = Weaksup_Chairs_Reference(supervision_level=args.sup_lvl, context_condition=args.context_condition)
+        if args.dataset == 'chairs':
+            train_dataset = Weaksup_Chairs_Reference(supervision_level=args.sup_lvl, context_condition=args.context_condition)
+        if args.dataset == 'critters':
+            image_size = 32
+            image_transform = transforms.Compose([
+                                                    transforms.Resize(image_size),
+                                                    transforms.CenterCrop(image_size),
+                                                ])
+            train_dataset = Weaksup_Critters_Reference(supervision_level=args.sup_lvl, context_condition='all', transform=image_transform)
         train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
@@ -212,13 +226,23 @@ if __name__ == '__main__':
         pad_index = w2i[PAD_TOKEN]
 
         # Define test dataset
-        test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition)
+        if args.dataset == 'chairs':
+            test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition)
+        if args.dataset == 'critters':
+            image_size = 32
+            image_transform = transforms.Compose([
+                                                    transforms.Resize(image_size),
+                                                    transforms.CenterCrop(image_size),
+                                                ])
+            test_dataset = Critters_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition, image_transform=image_transform)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
 
         if args.weaksup:
             unpaired_dataset = Chairs_ReferenceGame(vocab=vocab, split='Train', context_condition=args.context_condition)
             unpaired_txt_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
             unpaired_img_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
+
+        print("Dataset preparation complete.\n")
 
         # Define latent dimension |z_dim|
         z_dim = args.z_dim

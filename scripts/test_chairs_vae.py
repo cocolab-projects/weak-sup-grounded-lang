@@ -13,7 +13,6 @@ from utils import (AverageMeter, score_txt_logits, _reparameterize,
                     bernoulli_log_pdf, get_text, get_image_text_joint_nll)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
                     ImageEncoder, ImageTextEncoder, ImageDecoder)
-from chair_dataset import (Chairs_ReferenceGame)
 
 SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
@@ -26,6 +25,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('load_dir', type=str, help='where to load checkpoints from')
     parser.add_argument('out_dir', type=str, help='where to store results from')
+    parser.add_argument('--dataset', type=str, default='chairs')
     parser.add_argument('--sup_lvl', type=float, default=1.0,
                         help='supervision level, if any')
     parser.add_argument('--num_iter', type=int, default=1,
@@ -34,11 +34,14 @@ if __name__ == '__main__':
                         help='lambda argument for text loss')
     parser.add_argument('--beta', type=float, default=1,
                         help='lambda argument for image loss')
-    parser.add_argument('--context_condition', type=str, default='all',
+    parser.add_argument('--context_condition', type=str, default='far',
                         help='whether the dataset is to include all data')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
+
+    if args.dataset == 'chairs':
+        from chair_dataset import (Chairs_ReferenceGame)
 
     # set learning device
     args.cuda = args.cuda and torch.cuda.is_available()
@@ -65,17 +68,17 @@ if __name__ == '__main__':
         with torch.no_grad():
             loss_meter = AverageMeter()
             pbar = tqdm(total=len(test_loader))
-            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_src, x_tgt, x_len) in enumerate(test_loader):
+            for batch_idx, (tgt_chair, d1_img, d2_img, x_src, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_src.size(0) 
-                tgt_chair = tgt_chair.to(device).float()
+                tgt_img = tgt_img.to(device).float()
                 x_src = x_src.to(device)
                 x_tgt = x_tgt.to(device)
                 x_len = x_len.to(device)
 
                 # Encode to |z|
                 z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
-                z_y_mu, z_y_logvar = vae_img_enc(tgt_chair)
-                z_xy_mu, z_xy_logvar = vae_mult_enc(tgt_chair, x_src, x_len)
+                z_y_mu, z_y_logvar = vae_img_enc(tgt_img)
+                z_xy_mu, z_xy_logvar = vae_mult_enc(tgt_img, x_src, x_len)
 
                 # sample via reparametrization
                 z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
@@ -93,7 +96,7 @@ if __name__ == '__main__':
                         'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
                         'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
                         'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                        'y': tgt_chair, 'x': x_tgt, 'x_len': x_len, 'pad_index': pad_index}
+                        'y': tgt_img, 'x': x_tgt, 'x_len': x_len, 'pad_index': pad_index}
 
                 # compute loss
                 loss = loss_multimodal(out, batch_size, alpha=train_args.alpha, beta=train_args.beta)
@@ -156,40 +159,38 @@ if __name__ == '__main__':
             mean_correct_count, sample_correct_count, cond_correct_count = 0, 0, 0
 
             with tqdm(total=len(test_loader)) as pbar:
-                for batch_idx, (tgt_chair, d1_chair, d2_chair, x_src, x_tgt, x_len) in enumerate(test_loader):
+                for batch_idx, (tgt_img, d1_img, d2_img, x_src, x_tgt, x_len) in enumerate(test_loader):
                     batch_size = x_src.size(0)
-                    tgt_chair = tgt_chair.to(device).float()
-                    d1_chair = d1_chair.to(device).float()
-                    d2_chair = d2_chair.to(device).float()
+                    tgt_img = tgt_img.to(device).float()
+                    d1_img = d1_img.to(device).float()
+                    d2_img = d2_img.to(device).float()
                     x_src = x_src.to(device)
                     x_tgt = x_tgt.to(device)
                     x_len = x_len.to(device)
 
-                    breakpoint()
-
                     # Encode to |z|
                     z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
-                    z_xy_mu_tgt, z_xy_logvar_tgt = vae_mult_enc(tgt_chair, x_src, x_len)
-                    z_xy_mu_d1, z_xy_logvar_d1 = vae_mult_enc(d1_chair, x_src, x_len)
-                    z_xy_mu_d2, z_xy_logvar_d2 = vae_mult_enc(d2_chair, x_src, x_len)
+                    z_xy_mu_tgt, z_xy_logvar_tgt = vae_mult_enc(tgt_img, x_src, x_len)
+                    z_xy_mu_d1, z_xy_logvar_d1 = vae_mult_enc(d1_img, x_src, x_len)
+                    z_xy_mu_d2, z_xy_logvar_d2 = vae_mult_enc(d2_img, x_src, x_len)
 
                     # check accuracy for each datapoint via mean, sampling, conditional
                     for i in range(batch_size):
-                        verbose = i % 25 == 0
+                        verbose = i % 50 == 0
                         total_count += 1
 
                         # # mean-based estimator of joint probabilities based on z ~ q(z|x,y)
-                        # p_x_y1_sampled = get_sampled_joint_prob(tgt_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i])
-                        # p_x_y2_sampled = get_sampled_joint_prob(d1_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i])
-                        # p_x_y3_sampled = get_sampled_joint_prob(d2_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i])
+                        # p_x_y1_sampled = get_sampled_joint_prob(tgt_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i])
+                        # p_x_y2_sampled = get_sampled_joint_prob(d1_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i])
+                        # p_x_y3_sampled = get_sampled_joint_prob(d2_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i])
 
                         # # sample-based estimator of joint probabilities based on z ~ q(z|x,y)
-                        # p_x_y1_mean = get_mean_joint_prob(tgt_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i], verbose=verbose)
-                        # p_x_y2_mean = get_mean_joint_prob(d1_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i], verbose=verbose)
-                        # p_x_y3_mean = get_mean_joint_prob(d2_chair[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i], verbose=verbose)
+                        # p_x_y1_mean = get_mean_joint_prob(tgt_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i], verbose=verbose)
+                        # p_x_y2_mean = get_mean_joint_prob(d1_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i], verbose=verbose)
+                        # p_x_y3_mean = get_mean_joint_prob(d2_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i], verbose=verbose)
 
                         # choice based on conditional distribution z ~ q(z|x)
-                        pred_rgb_cond, cond_choice = get_conditional_choice(tgt_chair[i], d1_chair[i], d2_chair[i], z_x_mu[i])
+                        pred_rgb_cond, cond_choice = get_conditional_choice(tgt_img[i], d1_img[i], d2_img[i], z_x_mu[i])
                         
                         mean_correct, sample_correct, cond_correct = False, False, False
 
@@ -204,9 +205,7 @@ if __name__ == '__main__':
                             cond_correct_count += 1
                             cond_correct = True
                         if verbose:
-                            match_text = get_text(vocab['i2w'], x_tgt[i], x_len[i])
-                            print("================== ==================")
-                            
+                            # match_text = get_text(vocab['i2w'], x_tgt[i], x_len[i])                            
                             # print("mean-based choice correct? {}".format('T' if mean_correct else 'F'))
                             # print("sample-based choice correct? {}".format('T' if sample_correct else 'F'))
                             print("conditional distribution-based choice correct? {}".format('T' if cond_correct else 'F'))
@@ -216,6 +215,7 @@ if __name__ == '__main__':
                             # print("\n total count currently: {}".format(total_count))
                             
                     pbar.update()
+                pbar.close()    
 
             # mean_acc = mean_correct_count / float(total_count) * 100
             # sample_acc = sample_correct_count / float(total_count) * 100
@@ -283,8 +283,9 @@ if __name__ == '__main__':
         print("iteration {} with alpha {} and beta {}\n".format(iter_num, train_args.alpha, train_args.beta))
         print("best training epoch: {}".format(epoch))
 
-        test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Test', context_condition=args.context_condition)
-        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
+        if args.dataset == 'chairs':
+            test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Test', context_condition=args.context_condition)
+            test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
 
         # compute test loss & reference game accuracy
         # losses.append(test_loss())

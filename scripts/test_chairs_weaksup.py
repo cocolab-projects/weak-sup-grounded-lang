@@ -21,7 +21,7 @@ if __name__ == '__main__':
     parser.add_argument('sup_lvl', type=float, help='supervision level, if any')
     parser.add_argument('--num_iter', type=int, default=1,
                         help='number of total iterations performed on each setting [default: 1]')
-    parser.add_argument('--context_condition', type=str, default='all',
+    parser.add_argument('--context_condition', type=str, default='far',
                         help='whether the dataset is to include all data')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     parser.add_argument('--seed', type=int, default=42)
@@ -96,8 +96,9 @@ if __name__ == '__main__':
                 d1_score = model(d1_chair, x_inp, x_len)
                 d2_score = model(d2_chair, x_inp, x_len)
 
+                # breakpoint()
                 soft = nn.Softmax(dim=1)
-                loss = soft(torch.cat([tgt_score,d1_score,d2_score], 1))
+                loss = soft(torch.cat([tgt_score, d1_score, d2_score], 1))
                 softList = torch.argmax(loss, dim=1)
 
                 correct_count += torch.sum(softList == 0).item()
@@ -135,7 +136,7 @@ if __name__ == '__main__':
             test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
 
         txt_img_comp = TextImageCompatibility(vocab_size)
-        txt_img_comp.load_state_dict(txt_img_comp_sd)
+        # txt_img_comp.load_state_dict(txt_img_comp_sd)
         txt_img_comp = txt_img_comp.to(device)
 
         # losses.append(test_loss(txt_img_comp, vocab))
