@@ -97,8 +97,8 @@ class ColorDataset(data.Dataset):
                 source_tokens = source_tokens[:MAX_LEN]
                 target_tokens = target_tokens[:MAX_LEN - 1] + [EOS_TOKEN]
                 length = MAX_LEN
-            assert len(source_tokens) == 10, breakpoint()
-            assert len(target_tokens) == 10
+            assert len(source_tokens) == MAX_LEN, breakpoint()
+            assert len(target_tokens) == MAX_LEN
             source_indices = [self.vocab['w2i'].get(token, self.vocab['w2i'][UNK_TOKEN]) for token in source_tokens]
             target_indices = [self.vocab['w2i'].get(token, self.vocab['w2i'][UNK_TOKEN]) for token in target_tokens]
 
@@ -280,8 +280,8 @@ class Colors_ReferenceGame(data.Dataset):
                 source_tokens = source_tokens[:MAX_LEN]
                 target_tokens = target_tokens[:MAX_LEN - 1] + [EOS_TOKEN]
                 length = MAX_LEN
-            assert len(source_tokens) == 10, breakpoint()
-            assert len(target_tokens) == 10
+            assert len(source_tokens) == MAX_LEN, breakpoint()
+            assert len(target_tokens) == MAX_LEN
             source_indices = [self.vocab['w2i'].get(token, self.vocab['w2i'][UNK_TOKEN]) for token in source_tokens]
             target_indices = [self.vocab['w2i'].get(token, self.vocab['w2i'][UNK_TOKEN]) for token in target_tokens]
 

@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_iter', type=int, default = 3,
                         help='number of iterations for this setting [default: 1]')
-    parser.add_argument('--context_condition', type=str, default='all',
+    parser.add_argument('--context_condition', type=str, default='far',
                         help='whether the dataset is to include all data')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
@@ -112,6 +112,8 @@ if __name__ == '__main__':
         return loss_meter.avg
 
     print("begin training with supervision level: {} ...".format(args.sup_lvl))
+    print(args)
+
     for i in range(1, args.num_iter + 1):
         print()
         print("Training iteration {} for supervision level {}".format(i, args.sup_lvl))

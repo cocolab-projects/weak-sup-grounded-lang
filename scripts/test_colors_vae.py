@@ -242,7 +242,7 @@ if __name__ == '__main__':
                         #     print("current sample-based choice accuracy: {}".format(sample_correct_count / total_count))
                             
                     pbar.update()
-
+                pbar.close()
             # mean_acc = mean_correct_count / float(total_count) * 100
             # sample_acc = sample_correct_count / float(total_count) * 100
             cond_acc = cond_correct_count / float(total_count) * 100
