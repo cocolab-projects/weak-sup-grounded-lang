@@ -50,7 +50,7 @@ if __name__ == '__main__':
 
         loss_meter = AverageMeter()
         pbar = tqdm(total=len(train_loader))
-        for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_inp, x_len) in enumerate(train_loader):
+        for batch_idx, (tgt_chair, d1_chair, d2_chair, x_inp, x_tgt, x_len) in enumerate(train_loader):
             batch_size = x_inp.size(0) 
             tgt_chair = tgt_chair.to(device).float()
             d1_chair = d1_chair.to(device).float()
@@ -88,7 +88,7 @@ if __name__ == '__main__':
             loss_meter = AverageMeter()
 
             pbar = tqdm(total=len(test_loader))
-            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_tgt, x_inp, x_len) in enumerate(test_loader):
+            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_inp, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_inp.size(0) 
                 tgt_chair = tgt_chair.to(device).float()
                 d1_chair = d1_chair.to(device).float()

@@ -8,7 +8,7 @@ for ALPHA in 1
 do
 	for BETA in 1 2 4 5 8
 	do
-		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=3 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_epoch ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --epoch 120 --num_iter 3 --context_condition far --cuda; exec bash";
+		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae_FIX -dm bash -c "CUDA_VISIBLE_DEVICES=5 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_fix ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --epoch 120 --num_iter 3 --context_condition far --cuda; exec bash";
 	done
 done
 
@@ -16,7 +16,7 @@ for ALPHA in 5
 do
 	for BETA in 1 2 4 5 8
 	do
-		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=4 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_epoch ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --epoch 120 --num_iter 3 --context_condition far --cuda; exec bash";
+		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae_FIX -dm bash -c "CUDA_VISIBLE_DEVICES=7 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_fix ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --epoch 120 --num_iter 3 --context_condition far --cuda; exec bash";
 	done
 done
 
@@ -24,7 +24,7 @@ for ALPHA in 10
 do
 	for BETA in 1 2 4 5 8
 	do
-		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae -dm bash -c "CUDA_VISIBLE_DEVICES=5 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_epoch ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --epoch 120 --num_iter 3 --context_condition far --cuda; exec bash";
+		screen -S train_chairs_alpha_${ALPHA}_beta_${BETA}_vae_FIX -dm bash -c "CUDA_VISIBLE_DEVICES=8 python train_chairs_vae.py ${OUT_DIR}_alpha_beta_fix ${SUP_LEV} --dropout ${DROPOUT} --alpha ${ALPHA} --beta ${BETA} --epoch 120 --num_iter 3 --context_condition far --cuda; exec bash";
 	done
 done
 

@@ -125,9 +125,8 @@ if __name__ == '__main__':
     losses, accuracies = [], []
     for iter_num in range(1, args.num_iter + 1):
         print("loading checkpoint ...")
-        epoch, track_loss, txt_img_comp_sd, vocab, vocab_size = \
-            load_checkpoint(folder=args.load_dir,
-                            filename='checkpoint_{}_{}_best'.format(args.sup_lvl, iter_num))
+        epoch, track_loss, txt_img_comp_sd, vocab, vocab_size = load_checkpoint(folder=args.load_dir,
+                                                                                filename='checkpoint_{}_{}_best'.format(args.sup_lvl, iter_num))
         print("iteration {}".format(iter_num))
         print("best training epoch: {}".format(epoch))
 
@@ -136,7 +135,7 @@ if __name__ == '__main__':
             test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
 
         txt_img_comp = TextImageCompatibility(vocab_size)
-        # txt_img_comp.load_state_dict(txt_img_comp_sd)
+        txt_img_comp.load_state_dict(txt_img_comp_sd)
         txt_img_comp = txt_img_comp.to(device)
 
         # losses.append(test_loss(txt_img_comp, vocab))

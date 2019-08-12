@@ -144,6 +144,7 @@ class Chairs_ReferenceGame(data.Dataset):
 
         self.image_transform = image_transform
 
+        print("vocabulary size: {}".format(self.vocab_size))
         print("{} dataset preparation complete.".format(split))
 
         # print(self.vocab)

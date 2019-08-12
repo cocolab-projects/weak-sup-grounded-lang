@@ -205,6 +205,7 @@ if __name__ == '__main__':
                             cond_correct_count += 1
                             cond_correct = True
                         if verbose:
+                            print()
                             # match_text = get_text(vocab['i2w'], x_tgt[i], x_len[i])                            
                             # print("mean-based choice correct? {}".format('T' if mean_correct else 'F'))
                             # print("sample-based choice correct? {}".format('T' if sample_correct else 'F'))

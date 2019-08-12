@@ -185,6 +185,7 @@ if __name__ == '__main__':
         return loss_meter.avg
 
     print("=== begin training ===")
+    print(args)
     print("args: sup_lvl: {} alpha: {} beta: {} seed: {} context condition?: {} cuda?: {}".format(args.sup_lvl,
                                                                                     args.alpha,
                                                                                     args.beta,
@@ -218,7 +219,7 @@ if __name__ == '__main__':
                                                     transforms.CenterCrop(image_size),
                                                 ])
             train_dataset = Weaksup_Critters_Reference(supervision_level=args.sup_lvl, context_condition='all', transform=image_transform)
-        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
+        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size, num_workers=8)
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
@@ -235,7 +236,7 @@ if __name__ == '__main__':
                                                     transforms.CenterCrop(image_size),
                                                 ])
             test_dataset = Critters_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition, image_transform=image_transform)
-        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
+        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size, num_workers=9)
 
         if args.weaksup:
             unpaired_dataset = Chairs_ReferenceGame(vocab=vocab, split='Train', context_condition=args.context_condition)
@@ -310,4 +311,4 @@ if __name__ == '__main__':
             np.save(os.path.join(args.out_dir,
                 'loss_{}_{}.npy'.format(args.sup_lvl, i)), track_loss)
 
-
+    print(args)
