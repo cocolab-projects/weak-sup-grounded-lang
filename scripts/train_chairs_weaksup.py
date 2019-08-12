@@ -13,7 +13,6 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
-from chair_dataset import (Chairs_ReferenceGame, Weaksup_Chairs_Reference)
 
 from utils import (AverageMeter, save_checkpoint)
 from models import TextImageCompatibility
@@ -23,6 +22,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('out_dir', type=str, help='where to save checkpoints')
+    parser.add_argument('--dataset', type=str, default='chairs')
     parser.add_argument('sup_lvl', type=float, default = 1.0,
                         help='how much of the data to supervise [default: 1.0]')
     parser.add_argument('--batch_size', type=int, default=100,
@@ -38,6 +38,11 @@ if __name__ == '__main__':
                         help='whether the dataset is to include all data')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
+
+    if args.dataset == 'chairs':
+        from chair_dataset import (Chairs_ReferenceGame, Weaksup_Chairs_Reference)
+    if args.dataset == 'critters':
+        from critter_dataset import (Critters_ReferenceGame, Weaksup_Critters_Reference)
 
     if not os.path.isdir(args.out_dir):
         os.makedirs(args.out_dir)
@@ -133,14 +138,14 @@ if __name__ == '__main__':
 
         # Define training dataset & build vocab
         train_dataset = Weaksup_Chairs_Reference(supervision_level=args.sup_lvl, split='Train', context_condition=args.context_condition)
-        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size)
+        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size, num_workers=8)
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
 
         # Define test dataset
         test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition)
-        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size)
+        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size, num_workers=8)
 
         # Define model
         txt_img_comp = TextImageCompatibility(vocab_size)
@@ -173,4 +178,5 @@ if __name__ == '__main__':
             np.save(os.path.join(args.out_dir,
                 'loss_{}_{}.npy'.format(args.sup_lvl, i)), track_loss)
 
+    print(args)
 

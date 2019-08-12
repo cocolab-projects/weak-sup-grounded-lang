@@ -331,8 +331,9 @@ class ImageTextEncoder(nn.Module):
 
         return z_mu, z_logvar
 
-
 ########## Models for Colors dataset only (RGB & text) ##########
+
+########## 20190812 update: include option for ColorGrids dataset as well
 
 class ColorSupervised(nn.Module):
     """
@@ -346,7 +347,7 @@ class ColorSupervised(nn.Module):
     """
     def __init__(self, vocab_size, rgb_dim=3, embedding_dim=64, hidden_dim=256):
         super(ColorSupervised, self).__init__()
-        assert (rgb_dim == 3)
+        assert (rgb_dim == 3 or rgb_dim == 27)
 
         self.rgb_dim = rgb_dim
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
@@ -394,7 +395,7 @@ class ColorSupervised_Paired(nn.Module):
     """
     def __init__(self, vocab_size, rgb_dim=3, embedding_dim=64, hidden_dim=256):
         super(ColorSupervised_Paired, self).__init__()
-        assert (rgb_dim == 3)
+        assert (rgb_dim == 3 or rgb_dim == 27)
 
         self.rgb_dim = rgb_dim
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
@@ -449,7 +450,7 @@ class ColorEncoder(nn.Module):
     """
     def __init__(self, z_dim, rgb_dim=3, hidden_dim=256):
         super(ColorEncoder, self).__init__()
-        assert (rgb_dim == 3)
+        assert (rgb_dim == 3 or rgb_dim == 27)
 
         self.rgb_dim = rgb_dim
         self.z_dim = z_dim
@@ -464,41 +465,6 @@ class ColorEncoder(nn.Module):
         
         return z_mu, z_logvar
 
-class ColorEncoder_Augmented(nn.Module):
-    """
-    x: text, y: image, z: latent
-    Model p(z|y)
-    @param z_dim: number of latent dimensions
-    @param hidden_dim: integer [default: 256]
-                       number of hidden nodes in GRU
-    """
-    def __init__(self, z_dim, rgb_dim=3, hidden_dim=256):
-        super(ColorEncoder_Augmented, self).__init__()
-        assert (rgb_dim == 3)
-
-        self.rgb_dim = rgb_dim
-        self.z_dim = z_dim
-        self.hidden_dim = hidden_dim
-        self.sequential = nn.Sequential(nn.Linear(rgb_dim, hidden_dim),
-                                        nn.ReLU(),
-                                        nn.Linear(hidden_dim, hidden_dim * 4),
-                                        nn.LeakyReLU(),
-                                        nn.Linear(hidden_dim * 4, hidden_dim * 3),
-                                        nn.LeakyReLU(),
-                                        nn.Linear(hidden_dim * 3, hidden_dim * 2),
-                                        nn.ReLU(),
-                                        nn.Linear(hidden_dim * 2, hidden_dim),
-                                        nn.LeakyReLU(),
-                                        nn.Linear(hidden_dim, z_dim * 2)
-                                        )
-    
-    def forward(self, rgb):
-        # sent rgb value to latent dimension
-        z_mu, z_logvar = torch.chunk(self.sequential(rgb), 2, dim=1)
-        
-        return z_mu, z_logvar
-
-
 class MultimodalEncoder(nn.Module):
     """
     x: text, y: color (RGB value, dim=3), z: latent
@@ -511,7 +477,7 @@ class MultimodalEncoder(nn.Module):
     """
     def __init__(self, embedding_module, z_dim, rgb_dim=3, hidden_dim=256):
         super(MultimodalEncoder, self).__init__()
-        assert (rgb_dim == 3)
+        assert (rgb_dim == 3 or rgb_dim == 27)
 
         self.z_dim = z_dim
         self.rgb_dim = rgb_dim

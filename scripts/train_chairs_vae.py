@@ -18,6 +18,7 @@ from torchvision.utils import save_image
 from utils import (AverageMeter, save_checkpoint, _reparameterize, loss_multimodal)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
                     ImageEncoder, ImageTextEncoder, ImageDecoder)
+from forward import (forward_vae_image_text, forward_vae_image, forward_vae_text)
 
 SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
@@ -46,8 +47,8 @@ if __name__ == '__main__':
                         help='lambda argument for text loss')
     parser.add_argument('--beta', type=float, default=1,
                         help='lambda argument for rgb loss')
-    parser.add_argument('--weaksup', action='store_true',
-                        help='whether unpaired datasets are trained')
+    parser.add_argument('--weaksup', type=str, default='default',
+                        help='mode for unpaired dataset training')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_iter', type=int, default = 1,
                         help='number of iterations for this setting [default: 1]')
@@ -55,6 +56,8 @@ if __name__ == '__main__':
                         help='whether the dataset is to include all data')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
+
+    print("Called python script: train_chairs_vae.py")
 
     if args.dataset == 'chairs':
         from chair_dataset import (Chairs_ReferenceGame, Weaksup_Chairs_Reference)
@@ -83,35 +86,16 @@ if __name__ == '__main__':
 
         loss_meter = AverageMeter()
         pbar = tqdm(total=len(train_loader))
-        for batch_idx, (tgt_chair, d1_chair, d2_chair, x_src, x_tgt, x_len) in enumerate(train_loader):
+        for batch_idx, (tgt_img, d1_img, d2_img, x_src, x_tgt, x_len) in enumerate(train_loader):
             batch_size = x_src.size(0) 
-            tgt_chair = tgt_chair.to(device).float()
+            tgt_img = tgt_img.to(device).float()
             x_src = x_src.to(device)
             x_tgt = x_tgt.to(device)
             x_len = x_len.to(device)
 
-            # Encode to |z|
-            z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
-            z_y_mu, z_y_logvar = vae_img_enc(tgt_chair)
-            z_xy_mu, z_xy_logvar = vae_mult_enc(tgt_chair, x_src, x_len)
-
-            # sample via reparametrization
-            z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
-            z_sample_y = _reparameterize(z_y_mu, z_y_logvar)
-            z_sample_xy = _reparameterize(z_xy_mu, z_xy_logvar)
-
-            # "predictions"
-            y_mu_z_y = vae_img_dec(z_sample_y)
-            y_mu_z_xy = vae_img_dec(z_sample_xy)
-            x_logit_z_x = vae_txt_dec(z_sample_x, x_src, x_len)
-            x_logit_z_xy = vae_txt_dec(z_sample_xy, x_src, x_len)
-
-            out = {'z_x_mu': z_x_mu, 'z_x_logvar': z_x_logvar,
-                    'z_y_mu': z_y_mu, 'z_y_logvar': z_y_logvar,
-                    'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
-                    'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
-                    'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                    'y': tgt_chair, 'x': x_tgt, 'x_len': x_len, 'pad_index': pad_index}
+            models_xy = (vae_txt_enc, vae_img_enc, vae_mult_enc, vae_txt_dec, vae_img_dec)
+            out = forward_vae_image_text((tgt_img, x_src, x_tgt, x_len), models_xy)
+            out['pad_index'] = pad_index
 
             # compute loss
             loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta)
@@ -130,7 +114,98 @@ if __name__ == '__main__':
         
         return loss_meter.avg
 
+    def train_weakly_supervised(epoch):
+        """Function: train_weakly_supervised
+        Args:
+            param1 (int) epoch: training epoch
+        Returns:
+            (float): training loss over epoch
+        """
+        vae_emb.train()
+        vae_img_enc.train()
+        vae_txt_enc.train()
+        vae_mult_enc.train()
+        vae_img_dec.train()
+        vae_txt_dec.train()
 
+        train_xy_iterator = train_xy_loader.__iter__()
+        train_x_iterator = train_x_loader.__iter__()
+        train_y_iterator = train_y_loader.__iter__()
+
+        models_xy = (vae_txt_enc, vae_img_enc, vae_mult_enc, vae_txt_dec, vae_img_dec)
+        models_x = (vae_txt_enc, vae_txt_dec)
+        models_y = (vae_img_enc, vae_img_dec)
+        
+        loss_meter = AverageMeter()
+        pbar = tqdm(total=len(train_y_iterator))
+        for batch_i in range(len(train_y_iterator)):
+            try:
+                y_img, x_src, x_tgt, x_len = next(train_xy_iterator)
+                data_xy_args = [y_img, x_src, x_tgt, x_len]
+            except StopIteration:
+                train_xy_iterator = train_xy_loader.__iter__()
+                y_img, x_src, x_tgt, x_len = next(train_xy_iterator)
+                data_xy_args = [y_img, x_src, x_tgt, x_len]
+
+            try:
+                _, x_src, x_tgt, x_len = next(train_x_iterator)
+                data_x_args = [x_src, x_tgt, x_len]
+            except StopIteration:
+                train_x_iterator = train_x_loader.__iter__()
+                _, x_src, x_tgt, x_len = next(train_x_iterator)
+                data_x_args = [x_src, x_tgt, x_len]
+
+            try:
+                y, _, _, _ = next(train_y_iterator)
+                data_y_args = [y]
+            except StopIteration:
+                train_y_iterator = train_y_loader.__iter__()
+                y, _, _, _ = next(train_y_iterator)
+                data_y_args = [y]
+
+            batch_size = min(data_x_args[0].size(0), data_y_args[0].size(0), data_xy_args[0].size(0))
+            
+            # cast elements to CUDA and keep only the batch_size so that sizes are all the same
+            for j in range(len(data_xy_args)):
+                data_xy_args[j] = data_xy_args[j][:batch_size]
+                data_xy_args[j] = data_xy_args[j].to(device)
+            
+            for j in range(len(data_x_args)):
+                data_x_args[j] = data_x_args[j][:batch_size]
+                data_x_args[j] = data_x_args[j].to(device)
+            
+            for j in range(len(data_y_args)):
+                data_y_args[j] = data_y_args[j][:batch_size]
+                data_y_args[j] = data_y_args[j].to(device)
+
+            output_xy_dict = forward_vae_image_text(data_xy_args, models_xy)
+            output_x_dict = forward_vae_text(data_x_args, models_x)
+            output_y_dict = forward_vae_image(data_y_args, models_y)
+            output_xy_dict['pad_index'] = pad_index
+            output_x_dict['pad_index'] = pad_index
+
+            if args.weaksup.endswith('4terms'):
+                loss_xy = loss_multimodal_only(output_xy_dict, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
+            if args.weaksup.endswith('6terms'):
+                loss_xy = loss_multimodal(output_xy_dict, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
+            loss_x = loss_text_unimodal(output_x_dict, batch_size, alpha=args.alpha, gamma=args.gamma)
+            loss_y = loss_image_unimodal(output_y_dict, batch_size, beta=args.beta, gamma=args.gamma)
+
+            loss = loss_xy + loss_x + loss_y
+
+            loss_meter.update(loss.item(), batch_size)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            pbar.set_postfix({'loss': loss_meter.avg})
+            pbar.update()
+        pbar.close()
+
+        if epoch % 10 == 0:
+            print('====> Train Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
+        
+        return loss_meter.avg
 
     def test(epoch):
         vae_emb.eval()
@@ -144,17 +219,17 @@ if __name__ == '__main__':
             loss_meter = AverageMeter()
             pbar = tqdm(total=len(test_loader))
 
-            for batch_idx, (tgt_chair, d1_chair, d2_chair, x_src, x_tgt, x_len) in enumerate(test_loader):
+            for batch_idx, (tgt_img, d1_img, d2_img, x_src, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_src.size(0) 
-                tgt_chair = tgt_chair.to(device).float()
+                tgt_img = tgt_img.to(device).float()
                 x_src = x_src.to(device)
                 x_tgt = x_tgt.to(device)
                 x_len = x_len.to(device)
 
                 # Encode to |z|
                 z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
-                z_y_mu, z_y_logvar = vae_img_enc(tgt_chair)
-                z_xy_mu, z_xy_logvar = vae_mult_enc(tgt_chair, x_src, x_len)
+                z_y_mu, z_y_logvar = vae_img_enc(tgt_img)
+                z_xy_mu, z_xy_logvar = vae_mult_enc(tgt_img, x_src, x_len)
 
                 # sample via reparametrization
                 z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
@@ -172,7 +247,7 @@ if __name__ == '__main__':
                         'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
                         'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
                         'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                        'y': tgt_chair, 'x': x_tgt, 'x_len': x_len, 'pad_index': pad_index}
+                        'y': tgt_img, 'x': x_tgt, 'x_len': x_len, 'pad_index': pad_index}
 
                 # compute loss
                 loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta)
@@ -184,14 +259,14 @@ if __name__ == '__main__':
                 print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
         return loss_meter.avg
 
+
+
+#########################################
+# Training script
+#########################################
+
     print("=== begin training ===")
     print(args)
-    print("args: sup_lvl: {} alpha: {} beta: {} seed: {} context condition?: {} cuda?: {}".format(args.sup_lvl,
-                                                                                    args.alpha,
-                                                                                    args.beta,
-                                                                                    args.seed,
-                                                                                    args.context_condition,
-                                                                                    args.cuda))
 
     # repeat training on same model w/ different random seeds for |num_iter| times
     for i in range(1, args.num_iter + 1):
@@ -219,7 +294,7 @@ if __name__ == '__main__':
                                                     transforms.CenterCrop(image_size),
                                                 ])
             train_dataset = Weaksup_Critters_Reference(supervision_level=args.sup_lvl, context_condition='all', transform=image_transform)
-        train_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size, num_workers=8)
+        train_xy_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size, num_workers=8)
         N_mini_batches = len(train_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
@@ -236,12 +311,12 @@ if __name__ == '__main__':
                                                     transforms.CenterCrop(image_size),
                                                 ])
             test_dataset = Critters_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition, image_transform=image_transform)
-        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size, num_workers=9)
+        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size, num_workers=8)
 
         if args.weaksup:
             unpaired_dataset = Chairs_ReferenceGame(vocab=vocab, split='Train', context_condition=args.context_condition)
-            unpaired_txt_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
-            unpaired_img_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
+            train_x_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
+            train_y_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
 
         print("Dataset preparation complete.\n")
 
@@ -312,3 +387,28 @@ if __name__ == '__main__':
                 'loss_{}_{}.npy'.format(args.sup_lvl, i)), track_loss)
 
     print(args)
+
+
+# # Encode to |z|
+# z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
+# z_y_mu, z_y_logvar = vae_img_enc(tgt_img)
+# z_xy_mu, z_xy_logvar = vae_mult_enc(tgt_img, x_src, x_len)
+
+# # sample via reparametrization
+# z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
+# z_sample_y = _reparameterize(z_y_mu, z_y_logvar)
+# z_sample_xy = _reparameterize(z_xy_mu, z_xy_logvar)
+
+# # "predictions"
+# y_mu_z_y = vae_img_dec(z_sample_y)
+# y_mu_z_xy = vae_img_dec(z_sample_xy)
+# x_logit_z_x = vae_txt_dec(z_sample_x, x_src, x_len)
+# x_logit_z_xy = vae_txt_dec(z_sample_xy, x_src, x_len)
+
+# out = {'z_x_mu': z_x_mu, 'z_x_logvar': z_x_logvar,
+#         'z_y_mu': z_y_mu, 'z_y_logvar': z_y_logvar,
+#         'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
+#         'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
+#         'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
+#         'y': tgt_img, 'x': x_tgt, 'x_len': x_len, 'pad_index': pad_index}
+

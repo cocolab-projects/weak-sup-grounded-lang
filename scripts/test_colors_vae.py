@@ -12,7 +12,7 @@ from utils import (AverageMeter, score_txt_logits, _reparameterize,
                     loss_multimodal, _log_mean_exp, gaussian_log_pdf, isotropic_gaussian_log_pdf,
                     bernoulli_log_pdf, get_text, get_image_text_joint_nll, get_image_text_joint_nll_cond_only)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
-                    ColorEncoder, ColorEncoder_Augmented, MultimodalEncoder, ColorDecoder)
+                    ColorEncoder, MultimodalEncoder, ColorDecoder)
 from color_dataset import (ColorDataset, Colors_ReferenceGame)
 
 SOS_TOKEN = '<sos>'
