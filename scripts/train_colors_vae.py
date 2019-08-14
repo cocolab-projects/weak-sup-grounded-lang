@@ -340,14 +340,14 @@ if __name__ == '__main__':
         return loss_meter.avg
 
     def load_pretrained_checkpoint(iter_num, args, folder='./'):
-        rgb_best_filename = 'checkpoint_vae_pretrain_{}_alpha={}_beta={}_rgb_best'.format(iter_num,
+        img_best_filename = 'checkpoint_vae_pretrain_{}_alpha={}_beta={}_rgb_best'.format(iter_num,
                                                                                     args.alpha,
                                                                                     args.beta)
         txt_best_filename = 'checkpoint_vae_pretrain_{}_alpha={}_beta={}_txt_best'.format(iter_num,
                                                                                     args.alpha,
                                                                                     args.beta)
         print("\nloading pretrained checkpoint file:")
-        print("{}.pth.tar ...".format(rgb_best_filename)) 
+        print("{}.pth.tar ...".format(img_best_filename)) 
         print("{}.pth.tar ...\n".format(txt_best_filename))
         print("Post training version {}".format(args.weaksup))
 

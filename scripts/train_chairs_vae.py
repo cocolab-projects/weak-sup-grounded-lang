@@ -15,7 +15,8 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.utils import save_image
 
-from utils import (AverageMeter, save_checkpoint, _reparameterize, loss_multimodal)
+from utils import (AverageMeter, save_checkpoint, _reparameterize,
+                    loss_multimodal, loss_multimodal_only, loss_text_unimodal, loss_image_unimodal)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
                     ImageEncoder, ImageTextEncoder, ImageDecoder)
 from forward import (forward_vae_image_text, forward_vae_image, forward_vae_text)
@@ -47,11 +48,14 @@ if __name__ == '__main__':
                         help='lambda argument for text loss')
     parser.add_argument('--beta', type=float, default=1,
                         help='lambda argument for rgb loss')
+    parser.add_argument('--gamma', type=float, default=1,
+                        help='lambda hyperparameter for D_KL term loss')
     parser.add_argument('--weaksup', type=str, default='default',
                         help='mode for unpaired dataset training')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_iter', type=int, default = 1,
                         help='number of iterations for this setting [default: 1]')
+    parser.add_argument('--load_dir', type=str, help='where to load (pretrained) checkpoints from')
     parser.add_argument('--context_condition', type=str, default='far',
                         help='whether the dataset is to include all data')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
@@ -85,8 +89,8 @@ if __name__ == '__main__':
         vae_txt_dec.train()
 
         loss_meter = AverageMeter()
-        pbar = tqdm(total=len(train_loader))
-        for batch_idx, (tgt_img, d1_img, d2_img, x_src, x_tgt, x_len) in enumerate(train_loader):
+        pbar = tqdm(total=len(train_xy_loader))
+        for batch_idx, (tgt_img, d1_img, d2_img, x_src, x_tgt, x_len) in enumerate(train_xy_loader):
             batch_size = x_src.size(0) 
             tgt_img = tgt_img.to(device).float()
             x_src = x_src.to(device)
@@ -98,7 +102,10 @@ if __name__ == '__main__':
             out['pad_index'] = pad_index
 
             # compute loss
-            loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta)
+            if args.weaksup.endswith('2terms'):
+                loss = loss_multimodal_only(out, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
+            else:
+                loss = loss_multimodal(out, batch_size, alpha=args.alpha, beta=args.beta, gamma=args.gamma)
 
             loss_meter.update(loss.item(), batch_size)
             optimizer.zero_grad()
@@ -140,27 +147,27 @@ if __name__ == '__main__':
         pbar = tqdm(total=len(train_y_iterator))
         for batch_i in range(len(train_y_iterator)):
             try:
-                y_img, x_src, x_tgt, x_len = next(train_xy_iterator)
+                y_img, _, _, x_src, x_tgt, x_len = next(train_xy_iterator)
                 data_xy_args = [y_img, x_src, x_tgt, x_len]
             except StopIteration:
                 train_xy_iterator = train_xy_loader.__iter__()
-                y_img, x_src, x_tgt, x_len = next(train_xy_iterator)
+                y_img, _, _, x_src, x_tgt, x_len = next(train_xy_iterator)
                 data_xy_args = [y_img, x_src, x_tgt, x_len]
 
             try:
-                _, x_src, x_tgt, x_len = next(train_x_iterator)
+                _, _, _, x_src, x_tgt, x_len = next(train_x_iterator)
                 data_x_args = [x_src, x_tgt, x_len]
             except StopIteration:
                 train_x_iterator = train_x_loader.__iter__()
-                _, x_src, x_tgt, x_len = next(train_x_iterator)
+                _, _, _, x_src, x_tgt, x_len = next(train_x_iterator)
                 data_x_args = [x_src, x_tgt, x_len]
 
             try:
-                y, _, _, _ = next(train_y_iterator)
+                y, _, _, _, _, _ = next(train_y_iterator)
                 data_y_args = [y]
             except StopIteration:
                 train_y_iterator = train_y_loader.__iter__()
-                y, _, _, _ = next(train_y_iterator)
+                y, _, _, _, _, _ = next(train_y_iterator)
                 data_y_args = [y]
 
             batch_size = min(data_x_args[0].size(0), data_y_args[0].size(0), data_xy_args[0].size(0))
@@ -259,6 +266,53 @@ if __name__ == '__main__':
                 print('====> Test Epoch: {}\tLoss: {:.4f}'.format(epoch, loss_meter.avg))
         return loss_meter.avg
 
+    def load_pretrained_checkpoint(iter_num, args, folder='./'):
+        img_best_filename = 'checkpoint_vae_pretrain_{}_alpha={}_beta={}_rgb_best'.format(iter_num,
+                                                                                    args.alpha,
+                                                                                    args.beta)
+        txt_best_filename = 'checkpoint_vae_pretrain_{}_alpha={}_beta={}_txt_best'.format(iter_num,
+                                                                                    args.alpha,
+                                                                                    args.beta)
+        print("\nloading pretrained checkpoint file:")
+        print("{}.pth.tar ...".format(img_best_filename)) 
+        print("{}.pth.tar ...\n".format(txt_best_filename))
+        print("Post training version {}".format(args.weaksup))
+
+        img_checkpoint = torch.load(os.path.join(folder, img_best_filename + '.pth.tar'))
+        txt_checkpoint = torch.load(os.path.join(folder, txt_best_filename + '.pth.tar'))
+
+        img_epoch = img_checkpoint['epoch']
+        txt_epoch = txt_checkpoint['epoch']
+
+        vae_img_enc_sd = img_checkpoint['vae_img_enc']
+        vae_img_dec_sd = img_checkpoint['vae_img_dec']
+        
+        vae_emb_sd = txt_checkpoint['vae_emb']
+        vae_txt_enc_sd = txt_checkpoint['vae_txt_enc']
+        vae_txt_dec_sd = txt_checkpoint['vae_txt_dec']
+        
+        pre_vocab = img_checkpoint['vocab']
+        pre_vocab_size = img_checkpoint['vocab_size']
+        args = img_checkpoint['cmd_line_args']
+
+        w2i = pre_vocab['w2i']
+        pad_index = w2i[PAD_TOKEN]
+
+        channels, img_size = 3, 32
+        vae_emb = TextEmbedding(vocab_size)
+        vae_img_enc = ImageEncoder(channels, img_size, z_dim)
+        vae_txt_enc = TextEncoder(vae_emb, z_dim)
+        vae_img_dec = ImageDecoder(channels, img_size, z_dim)
+        vae_txt_dec = TextDecoder(vae_emb, z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
+                                    w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
+
+        vae_emb.load_state_dict(vae_emb_sd)
+        vae_txt_enc.load_state_dict(vae_txt_enc_sd)
+        vae_txt_dec.load_state_dict(vae_txt_dec_sd)
+        vae_img_enc.load_state_dict(vae_img_enc_sd)
+        vae_img_dec.load_state_dict(vae_img_dec_sd)
+
+        return vae_emb, vae_txt_enc, vae_txt_dec, vae_img_enc, vae_img_dec, pre_vocab
 
 
 #########################################
@@ -268,9 +322,27 @@ if __name__ == '__main__':
     print("=== begin training ===")
     print(args)
 
+    assert args.weaksup in [
+                            'default',
+                            '6terms',
+                            '4terms',
+                            'post-nounp-2terms',
+                            'post-nounp-4terms',
+                            'coin',
+                            'post-4terms',
+                            'post-6terms',
+                            'post-only-rgb-4terms',
+                            'post-only-rgb-6terms',
+                            'post-only-text-4terms',
+                            'post-only-text-6terms',
+                            ]
+
+    if args.weaksup.startswith('post'):
+        assert args.load_dir != None
+
     # repeat training on same model w/ different random seeds for |num_iter| times
-    for i in range(1, args.num_iter + 1):
-        print("\nTraining iteration {} for supervision level {}".format(i, args.sup_lvl))
+    for iter_num in range(1, args.num_iter + 1):
+        print("\nTraining iteration {} for supervision level {}".format(iter_num, args.sup_lvl))
         
         # set random seeds
         random_iter_seed = random.randint(0, 500)
@@ -287,15 +359,16 @@ if __name__ == '__main__':
         # Define training dataset & build vocab
         if args.dataset == 'chairs':
             train_dataset = Weaksup_Chairs_Reference(supervision_level=args.sup_lvl, context_condition=args.context_condition)
-        if args.dataset == 'critters':
-            image_size = 32
-            image_transform = transforms.Compose([
-                                                    transforms.Resize(image_size),
-                                                    transforms.CenterCrop(image_size),
-                                                ])
-            train_dataset = Weaksup_Critters_Reference(supervision_level=args.sup_lvl, context_condition='all', transform=image_transform)
+        # if args.dataset == 'critters':
+        #     image_size = 32
+        #     image_transform = transforms.Compose([
+        #                                             transforms.Resize(image_size),
+        #                                             transforms.CenterCrop(image_size),
+        #                                         ])
+        #     train_dataset = Weaksup_Critters_Reference(supervision_level=args.sup_lvl, context_condition='all', transform=image_transform)
         train_xy_loader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size, num_workers=8)
-        N_mini_batches = len(train_loader)
+        
+        N_mini_batches = len(train_xy_loader)
         vocab_size = train_dataset.vocab_size
         vocab = train_dataset.vocab
         w2i = vocab['w2i']
@@ -304,19 +377,19 @@ if __name__ == '__main__':
         # Define test dataset
         if args.dataset == 'chairs':
             test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition)
-        if args.dataset == 'critters':
-            image_size = 32
-            image_transform = transforms.Compose([
-                                                    transforms.Resize(image_size),
-                                                    transforms.CenterCrop(image_size),
-                                                ])
-            test_dataset = Critters_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition, image_transform=image_transform)
+        # if args.dataset == 'critters':
+        #     image_size = 32
+        #     image_transform = transforms.Compose([
+        #                                             transforms.Resize(image_size),
+        #                                             transforms.CenterCrop(image_size),
+        #                                         ])
+        #     test_dataset = Critters_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition, image_transform=image_transform)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=args.batch_size, num_workers=8)
 
-        if args.weaksup:
+        if args.weaksup != 'default' and not args.weaksup.startswith('post-nounp'):
             unpaired_dataset = Chairs_ReferenceGame(vocab=vocab, split='Train', context_condition=args.context_condition)
-            train_x_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
-            train_y_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size)
+            train_x_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size, num_workers=8)
+            train_y_loader = DataLoader(unpaired_dataset, shuffle=True, batch_size=args.batch_size, num_workers=8)
 
         print("Dataset preparation complete.\n")
 
@@ -332,6 +405,16 @@ if __name__ == '__main__':
         vae_img_dec = ImageDecoder(channels, img_size, z_dim)
         vae_txt_dec = TextDecoder(vae_emb, z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
                                     w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
+
+        if args.weaksup.startswith('post'):
+            if 'only' not in args.weaksup:
+                vae_emb, vae_txt_enc, vae_txt_dec, vae_img_enc, vae_img_dec, pre_vocab = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
+            elif args.weaksup.startswith('post-only-img'):
+                _, _, _, vae_img_enc, vae_img_dec, pre_vocab = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
+            elif args.weaksup.startswith('post-only-text'):
+                vae_emb, vae_txt_enc, vae_txt_dec, _, _, pre_vocab = load_pretrained_checkpoint(iter_num, args, folder=args.load_dir)
+            assert pre_vocab == vocab
+        vae_mult_enc = ImageTextEncoder(channels, img_size, z_dim, vae_emb)
 
         # Mount devices unto GPU
         vae_emb = vae_emb.to(device)
@@ -356,10 +439,10 @@ if __name__ == '__main__':
         track_loss = np.zeros((args.epochs, 2))
         
         for epoch in range(1, args.epochs + 1):
-            if args.weaksup:
-                train_loss = train_weakly_supervised(epoch)
-            else:
+            if args.weaksup == 'default' or args.weaksup.startswith('post-nounp'):
                 train_loss = train(epoch)
+            else:
+                train_loss = train_weakly_supervised(epoch)
             test_loss = test(epoch)
 
             is_best = test_loss < best_loss
@@ -382,9 +465,9 @@ if __name__ == '__main__':
                 'vocab_size': vocab_size,
                 'seed': random_iter_seed
             }, is_best, folder=args.out_dir,
-            filename='checkpoint_vae_{}_{}_alpha={}_beta={}'.format(args.sup_lvl, i, args.alpha, args.beta))
+            filename='checkpoint_vae_{}_{}_alpha={}_beta={}'.format(args.sup_lvl, iter_num, args.alpha, args.beta))
             np.save(os.path.join(args.out_dir,
-                'loss_{}_{}.npy'.format(args.sup_lvl, i)), track_loss)
+                'loss_{}_{}.npy'.format(args.sup_lvl, iter_num)), track_loss)
 
     print(args)
 
