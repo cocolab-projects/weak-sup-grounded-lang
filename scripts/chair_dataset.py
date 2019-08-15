@@ -26,7 +26,7 @@ UNK_TOKEN = '<unk>'
 TRAINING_PERCENTAGE = 64 / 100
 TESTING_PERCENTAGE = 20 / 100
 MIN_USED = 2
-MAX_LEN = 15
+MAX_LEN = 1
 
 class Chairs_ReferenceGame(data.Dataset):
     def __init__(self, vocab=None, split='Train', context_condition='far', 
@@ -144,7 +144,8 @@ class Chairs_ReferenceGame(data.Dataset):
 
         self.image_transform = image_transform
 
-        print("{} dataset preparation complete.".format(split))
+        print("vocabulary size: {}".format(self.vocab_size))
+        print("{} dataset preparation complete.\n".format(split))
 
         # print(self.vocab)
 
@@ -284,6 +285,7 @@ class Weaksup_Chairs_Reference(Chairs_ReferenceGame):
         n = len(self.inputs)
         supervision = self.random_state.binomial(1, supervision_level, size=n)
         supervision = supervision.astype(np.bool)
+        self.labels = self.labels[supervision]
         self.data = list(np.array(self.data)[supervision])
         self.inputs = self.inputs[supervision]
         self.targets = self.targets[supervision]

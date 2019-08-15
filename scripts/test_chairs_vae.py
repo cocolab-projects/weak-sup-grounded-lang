@@ -40,8 +40,13 @@ if __name__ == '__main__':
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
 
+    print("Called python script: test_chairs_vae.py")
+    print(args)
+
     if args.dataset == 'chairs':
-        from chair_dataset import (Chairs_ReferenceGame)
+        from chair_dataset import (Chairs_ReferenceGame, Weaksup_Chairs_Reference)
+    if args.dataset == 'critters':
+        from critter_dataset import (Critters_ReferenceGame, Weaksup_Critters_Reference)
 
     # set learning device
     args.cuda = args.cuda and torch.cuda.is_available()
@@ -68,7 +73,7 @@ if __name__ == '__main__':
         with torch.no_grad():
             loss_meter = AverageMeter()
             pbar = tqdm(total=len(test_loader))
-            for batch_idx, (tgt_chair, d1_img, d2_img, x_src, x_tgt, x_len) in enumerate(test_loader):
+            for batch_idx, (tgt_img, d1_img, d2_img, x_src, x_tgt, x_len) in enumerate(test_loader):
                 batch_size = x_src.size(0) 
                 tgt_img = tgt_img.to(device).float()
                 x_src = x_src.to(device)
@@ -108,25 +113,6 @@ if __name__ == '__main__':
             print('====> Final Test Loss: {:.4f}'.format(loss_meter.avg))
         return loss_meter.avg
 
-    def get_sampled_joint_prob(y_i, x_src, x_tgt, x_len, z_xy_mu, z_xy_logvar):
-        z_samples = torch.randn(N_SAMPLE, train_args.z_dim).to(device) * torch.exp(0.5 * z_xy_logvar) + z_xy_mu
-
-        y_mu_list = vae_img_dec(z_samples)
-        x_tgt_logits_list = vae_txt_dec(z_samples, x_src.unsqueeze(0).repeat(N_SAMPLE, 1),
-                                                    x_len.unsqueeze(0).repeat(N_SAMPLE))
-        elt_max_len = x_tgt_logits_list.size(1)
-        x_tgt_i = x_tgt[:elt_max_len]
-        x_len_i = elt_max_len
-
-        return get_image_text_joint_nll(y_i, y_mu_list, x_tgt_i, x_tgt_logits_list, x_len, z_samples, z_xy_mu, z_xy_logvar, pad_index)
-
-    def get_mean_joint_prob(y, x_src, x_tgt, x_len, z_xy_mu, z_xy_logvar, verbose=False):
-        y_mu_z_xy = vae_img_dec(z_xy_mu.unsqueeze(0))
-        x_tgt_logits = vae_txt_dec(z_xy_mu.unsqueeze(0), x_src.unsqueeze(0), x_len.unsqueeze(0))
-        x_tgt = x_tgt[:x_len]
-
-        return get_image_text_joint_nll(y, y_mu_z_xy, x_tgt, x_tgt_logits, x_len, z_xy_mu.unsqueeze(0), z_xy_mu, z_xy_logvar, pad_index, verbose)
-
     def get_conditional_choice(y_1, y_2, y_3, z_mu):
         pred_img_cond = vae_img_dec(z_mu)
         diff_tgt = bernoulli_log_pdf(y_1.view(-1).unsqueeze(0), pred_img_cond.view(-1))
@@ -156,7 +142,7 @@ if __name__ == '__main__':
             loss_meter = AverageMeter()
 
             total_count = 0
-            mean_correct_count, sample_correct_count, cond_correct_count = 0, 0, 0
+            cond_correct_count = 0
 
             with tqdm(total=len(test_loader)) as pbar:
                 for batch_idx, (tgt_img, d1_img, d2_img, x_src, x_tgt, x_len) in enumerate(test_loader):
@@ -176,44 +162,20 @@ if __name__ == '__main__':
 
                     # check accuracy for each datapoint via mean, sampling, conditional
                     for i in range(batch_size):
-                        verbose = i % 50 == 0
+                        verbose = i % 80 == 0
                         total_count += 1
 
-                        # # mean-based estimator of joint probabilities based on z ~ q(z|x,y)
-                        # p_x_y1_sampled = get_sampled_joint_prob(tgt_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i])
-                        # p_x_y2_sampled = get_sampled_joint_prob(d1_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i])
-                        # p_x_y3_sampled = get_sampled_joint_prob(d2_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i])
-
-                        # # sample-based estimator of joint probabilities based on z ~ q(z|x,y)
-                        # p_x_y1_mean = get_mean_joint_prob(tgt_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i], verbose=verbose)
-                        # p_x_y2_mean = get_mean_joint_prob(d1_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i], verbose=verbose)
-                        # p_x_y3_mean = get_mean_joint_prob(d2_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i], verbose=verbose)
-
-                        # choice based on conditional distribution z ~ q(z|x)
+                        
                         pred_rgb_cond, cond_choice = get_conditional_choice(tgt_img[i], d1_img[i], d2_img[i], z_x_mu[i])
                         
                         mean_correct, sample_correct, cond_correct = False, False, False
-
-                        # if p_x_y1_mean < p_x_y2_mean and p_x_y1_mean < p_x_y3_mean:
-                        #     mean_correct_count += 1
-                        #     mean_correct = True
-                        # if p_x_y1_sampled < p_x_y2_sampled and p_x_y1_sampled < p_x_y3_sampled:
-                        #     sample_correct_count += 1
-                        #     sample_correct = True
 
                         if cond_choice == 0:
                             cond_correct_count += 1
                             cond_correct = True
                         if verbose:
-                            # match_text = get_text(vocab['i2w'], x_tgt[i], x_len[i])                            
-                            # print("mean-based choice correct? {}".format('T' if mean_correct else 'F'))
-                            # print("sample-based choice correct? {}".format('T' if sample_correct else 'F'))
+                            print()
                             print("conditional distribution-based choice correct? {}".format('T' if cond_correct else 'F'))
-                            # print("p_x_y1_sampled: {}, p_x_y2_sampled: {}, p_x_y3_sampled: {}".format(p_x_y1_sampled, p_x_y2_sampled, p_x_y3_sampled))
-                            # print("p_x_y1_mean: {}, p_x_y2_mean: {}, p_x_y3_mean: {}".format(p_x_y1_mean, p_x_y2_mean, p_x_y3_mean))
-                            
-                            # print("\n total count currently: {}".format(total_count))
-                            
                     pbar.update()
                 pbar.close()    
 
@@ -285,8 +247,14 @@ if __name__ == '__main__':
 
         if args.dataset == 'chairs':
             test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Test', context_condition=args.context_condition)
-            test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100)
-
+        if args.dataset == 'critters':
+            image_size = 32
+            image_transform = transforms.Compose([
+                                                    transforms.Resize(image_size),
+                                                    transforms.CenterCrop(image_size),
+                                                ])
+            test_dataset = Critters_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition, image_transform=image_transform)
+        test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100, num_workers=8)
         # compute test loss & reference game accuracy
         # losses.append(test_loss())
         cond_acc = test_refgame_accuracy()
@@ -309,6 +277,43 @@ if __name__ == '__main__':
     print("... saving complete.")
 
     print("\n======> Best epochs: {}".format(best_epochs))
-    # print("\n======> Average loss: {:6f}".format(np.mean(losses)))
-    print("======> Average mean-based accuracy: {:4f}".format(np.mean(mean_accuracies)))
+    print("======> Average conditional accuracy: {:4f}".format(np.mean(cond_accuracies)))
 
+
+
+    # def get_sampled_joint_prob(y_i, x_src, x_tgt, x_len, z_xy_mu, z_xy_logvar):
+    #     z_samples = torch.randn(N_SAMPLE, train_args.z_dim).to(device) * torch.exp(0.5 * z_xy_logvar) + z_xy_mu
+
+    #     y_mu_list = vae_img_dec(z_samples)
+    #     x_tgt_logits_list = vae_txt_dec(z_samples, x_src.unsqueeze(0).repeat(N_SAMPLE, 1),
+    #                                                 x_len.unsqueeze(0).repeat(N_SAMPLE))
+    #     elt_max_len = x_tgt_logits_list.size(1)
+    #     x_tgt_i = x_tgt[:elt_max_len]
+    #     x_len_i = elt_max_len
+
+    #     return get_image_text_joint_nll(y_i, y_mu_list, x_tgt_i, x_tgt_logits_list, x_len, z_samples, z_xy_mu, z_xy_logvar, pad_index)
+
+    # def get_mean_joint_prob(y, x_src, x_tgt, x_len, z_xy_mu, z_xy_logvar, verbose=False):
+    #     y_mu_z_xy = vae_img_dec(z_xy_mu.unsqueeze(0))
+    #     x_tgt_logits = vae_txt_dec(z_xy_mu.unsqueeze(0), x_src.unsqueeze(0), x_len.unsqueeze(0))
+    #     x_tgt = x_tgt[:x_len]
+
+    #     return get_image_text_joint_nll(y, y_mu_z_xy, x_tgt, x_tgt_logits, x_len, z_xy_mu.unsqueeze(0), z_xy_mu, z_xy_logvar, pad_index, verbose)
+
+    # # mean-based estimator of joint probabilities based on z ~ q(z|x,y)
+    # p_x_y1_sampled = get_sampled_joint_prob(tgt_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i])
+    # p_x_y2_sampled = get_sampled_joint_prob(d1_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i])
+    # p_x_y3_sampled = get_sampled_joint_prob(d2_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i])
+
+    # # sample-based estimator of joint probabilities based on z ~ q(z|x,y)
+    # p_x_y1_mean = get_mean_joint_prob(tgt_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_tgt[i], z_xy_logvar_tgt[i], verbose=verbose)
+    # p_x_y2_mean = get_mean_joint_prob(d1_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d1[i], z_xy_logvar_d1[i], verbose=verbose)
+    # p_x_y3_mean = get_mean_joint_prob(d2_img[i], x_src[i], x_tgt[i], x_len[i], z_xy_mu_d2[i], z_xy_logvar_d2[i], verbose=verbose)
+
+    # choice based on conditional distribution z ~ q(z|x)
+    # if p_x_y1_mean < p_x_y2_mean and p_x_y1_mean < p_x_y3_mean:
+    #     mean_correct_count += 1
+    #     mean_correct = True
+    # if p_x_y1_sampled < p_x_y2_sampled and p_x_y1_sampled < p_x_y3_sampled:
+    #     sample_correct_count += 1
+    #     sample_correct = True

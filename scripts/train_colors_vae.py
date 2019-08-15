@@ -17,7 +17,7 @@ from color_dataset import (ColorDataset, WeakSup_ColorDataset)
 
 from utils import (AverageMeter, save_checkpoint, _reparameterize, loss_multimodal, loss_text_unimodal, loss_image_unimodal, loss_multimodal_only)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
-                    ColorEncoder, ColorEncoder_Augmented, MultimodalEncoder, ColorDecoder)
+                    ColorEncoder, MultimodalEncoder, ColorDecoder)
 from forward import (forward_vae_rgb_text, forward_vae_rgb, forward_vae_text)
 # from loss import (VAE_loss)
 
@@ -58,6 +58,8 @@ if __name__ == '__main__':
     parser.add_argument('--context_condition', type=str, default='far', help='whether the dataset is to include all data')
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
+
+    print("Called python script: train_colors_vae.py")
 
     if not os.path.isdir(args.out_dir):
         os.makedirs(args.out_dir)
@@ -338,14 +340,14 @@ if __name__ == '__main__':
         return loss_meter.avg
 
     def load_pretrained_checkpoint(iter_num, args, folder='./'):
-        rgb_best_filename = 'checkpoint_vae_pretrain_{}_alpha={}_beta={}_rgb_best'.format(iter_num,
+        img_best_filename = 'checkpoint_vae_pretrain_{}_alpha={}_beta={}_rgb_best'.format(iter_num,
                                                                                     args.alpha,
                                                                                     args.beta)
         txt_best_filename = 'checkpoint_vae_pretrain_{}_alpha={}_beta={}_txt_best'.format(iter_num,
                                                                                     args.alpha,
                                                                                     args.beta)
         print("\nloading pretrained checkpoint file:")
-        print("{}.pth.tar ...".format(rgb_best_filename)) 
+        print("{}.pth.tar ...".format(img_best_filename)) 
         print("{}.pth.tar ...\n".format(txt_best_filename))
         print("Post training version {}".format(args.weaksup))
 
@@ -390,13 +392,7 @@ if __name__ == '__main__':
 #########################################
 
     print("=== begin training ===")
-    print("args: sup_lvl: {} alpha: {} beta: {} seed: {} context condition?: {} cuda?: {} weaksup: {}".format(args.sup_lvl,
-                                                                                    args.alpha,
-                                                                                    args.beta,
-                                                                                    args.seed,
-                                                                                    args.context_condition,
-                                                                                    args.cuda,
-                                                                                    args.weaksup))
+    print(args)
 
     assert args.weaksup in [
                             'default',
