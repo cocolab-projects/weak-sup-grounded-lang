@@ -331,8 +331,8 @@ if __name__ == '__main__':
                             'coin',
                             'post-4terms',
                             'post-6terms',
-                            'post-only-img-4terms',
-                            'post-only-img-6terms',
+                            'post-only-rgb-4terms',
+                            'post-only-rgb-6terms',
                             'post-only-text-4terms',
                             'post-only-text-6terms',
                             ]
