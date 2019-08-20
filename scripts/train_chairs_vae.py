@@ -345,7 +345,7 @@ if __name__ == '__main__':
         print("\nTraining iteration {} for supervision level {}".format(iter_num, args.sup_lvl))
         
         # set random seeds
-        random_iter_seed = random.randint(0, 500)
+        random_iter_seed = random.randint(0, 1000000000)
         print("Random seed set to : {}".format(random_iter_seed))
         torch.cuda.manual_seed(random_iter_seed)
         random.seed(random_iter_seed)

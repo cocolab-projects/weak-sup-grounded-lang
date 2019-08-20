@@ -143,5 +143,4 @@ if __name__ == '__main__':
     np.save(os.path.join(args.out_dir, 'final_losses_{}.npy'.format(args.sup_lvl)), losses)
 
     print()
-    print("======> Average loss: {}".format(np.mean(losses)))
     print("======> Average accuracy: {}".format(np.mean(accuracies)))
