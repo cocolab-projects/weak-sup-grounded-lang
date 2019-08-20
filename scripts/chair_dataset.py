@@ -26,7 +26,7 @@ UNK_TOKEN = '<unk>'
 TRAINING_PERCENTAGE = 64 / 100
 TESTING_PERCENTAGE = 20 / 100
 MIN_USED = 2
-MAX_LEN = 1
+MAX_LEN = 15
 
 class Chairs_ReferenceGame(data.Dataset):
     def __init__(self, vocab=None, split='Train', context_condition='far', 
