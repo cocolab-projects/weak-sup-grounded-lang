@@ -60,10 +60,10 @@ SUP_LEV=1.0;
 
 ####### TEST Weak supervision #######
 
-for SUP_LEV in 0.0005 0.001 0.002 0.005 0.01 0.02
-do
-    screen -S test_chairs_${SUP_LEV}_vae_default -dm bash -c "CUDA_VISIBLE_DEVICES=3 python test_chairs_vae.py ${LOAD_DIR}_default ${RES_OUT_DIR}_default --sup_lvl ${SUP_LEV} --alpha 1 --beta 2 --num_iter 3 --cuda; exec bash";
-done
+# for SUP_LEV in 0.0005 0.001 0.002 0.005 0.01 0.02
+# do
+#     screen -S test_chairs_${SUP_LEV}_vae_default -dm bash -c "CUDA_VISIBLE_DEVICES=3 python test_chairs_vae.py ${LOAD_DIR}_default ${RES_OUT_DIR}_default --sup_lvl ${SUP_LEV} --alpha 1 --beta 2 --num_iter 3 --cuda; exec bash";
+# done
 
 # for SUP_LEV in 0.05 0.1 0.2 0.5 1.0
 # do
@@ -110,6 +110,26 @@ done
 #     screen -S test_chairs_${SUP_LEV}_vae_post_nounp_4terms -dm bash -c "CUDA_VISIBLE_DEVICES=9 python test_chairs_vae.py ${LOAD_DIR}_weaksup_post_nounp_4terms ${RES_OUT_DIR}_weaksup_post_nounp_4terms --sup_lvl ${SUP_LEV} --alpha 1 --beta 2 --num_iter 3 --cuda; exec bash";
 # done
 
+
+for SUP_LEV in 0.0005 0.001 0.002 0.005 0.01 0.02
+do
+    screen -S test_chairs_${SUP_LEV}_vae_post_only_img_unp_4terms -dm bash -c "CUDA_VISIBLE_DEVICES=0 python test_chairs_vae.py ${LOAD_DIR}_weaksup_post_only_img_unp_4terms ${RES_OUT_DIR}_weaksup_post_only_img_unp_4terms --sup_lvl ${SUP_LEV} --alpha 1 --beta 2 --num_iter 3 --cuda; exec bash";
+done
+
+for SUP_LEV in 0.05 0.1 0.2 0.5 1.0
+do
+    screen -S test_chairs_${SUP_LEV}_vae_post_only_img_unp_4terms -dm bash -c "CUDA_VISIBLE_DEVICES=1 python test_chairs_vae.py ${LOAD_DIR}_weaksup_post_only_img_unp_4terms ${RES_OUT_DIR}_weaksup_post_only_img_unp_4terms --sup_lvl ${SUP_LEV} --alpha 1 --beta 2 --num_iter 3 --cuda; exec bash";
+done
+
+for SUP_LEV in 0.0005 0.001 0.002 0.005 0.01 0.02
+do
+    screen -S test_chairs_${SUP_LEV}_vae_post_only_text_unp_4terms -dm bash -c "CUDA_VISIBLE_DEVICES=7 python test_chairs_vae.py ${LOAD_DIR}_weaksup_post_only_text_unp_4terms ${RES_OUT_DIR}_weaksup_post_only_text_unp_4terms --sup_lvl ${SUP_LEV} --alpha 1 --beta 2 --num_iter 3 --cuda; exec bash";
+done
+
+for SUP_LEV in 0.05 0.1 0.2 0.5 1.0
+do
+    screen -S test_chairs_${SUP_LEV}_vae_post_only_text_unp_4terms -dm bash -c "CUDA_VISIBLE_DEVICES=8 python test_chairs_vae.py ${LOAD_DIR}_weaksup_post_only_text_unp_4terms ${RES_OUT_DIR}_weaksup_post_only_text_unp_4terms --sup_lvl ${SUP_LEV} --alpha 1 --beta 2 --num_iter 3 --cuda; exec bash";
+done
 
 
 

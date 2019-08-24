@@ -48,13 +48,13 @@ SUP_LEV=1.0;
 ###### default ######
 # for SUP_LEV in 0.0005 0.001 0.002 0.005 0.01 0.02
 # do
-# 		screen -S train_chairs_${SUP_LEV}_vae_default -dm bash -c "CUDA_VISIBLE_DEVICES=0 python train_chairs_vae.py ${OUT_DIR}_default ${SUP_LEV} --dropout ${DROPOUT} --weaksup default --alpha 1 --beta 2 --num_iter 3 --cuda --context_condition far; exec bash";
+# 		screen -S train_chairs_${SUP_LEV}_vae_default -dm bash -c "CUDA_VISIBLE_DEVICES=8 python train_chairs_vae.py ${OUT_DIR}_default_new ${SUP_LEV} --dropout ${DROPOUT} --weaksup default --alpha 1 --beta 2 --num_iter 3 --cuda --context_condition far; exec bash";
 # done
 
-# for SUP_LEV in 0.05 0.1 0.2 0.5 1.0
-# do
-# 		screen -S train_chairs_${SUP_LEV}_vae_default -dm bash -c "CUDA_VISIBLE_DEVICES=1 python train_chairs_vae.py ${OUT_DIR}_default ${SUP_LEV} --dropout ${DROPOUT} --weaksup default --alpha 1 --beta 2 --num_iter 3 --cuda --context_condition far; exec bash";
-# done
+for SUP_LEV in 0.05 0.1 0.2 0.5 1.0
+do
+		screen -S train_chairs_${SUP_LEV}_vae_default -dm bash -c "CUDA_VISIBLE_DEVICES=9 python train_chairs_vae.py ${OUT_DIR}_default_new ${SUP_LEV} --dropout ${DROPOUT} --weaksup default --alpha 1 --beta 2 --num_iter 3 --cuda --context_condition far; exec bash";
+done
 
 ###### 4 terms ######
 # for SUP_LEV in 0.0005 0.001 0.002 0.005 0.01 0.02
@@ -101,15 +101,15 @@ SUP_LEV=1.0;
 # done
 
 ##### post - only rgb - unpaired, 4terms ######
-for SUP_LEV in 0.0005 0.001 0.002 0.005 0.01 0.02
-do
-		screen -S train_chairs_${SUP_LEV}_vae_post_only_img_unp_4terms -dm bash -c "CUDA_VISIBLE_DEVICES=5 python train_chairs_vae.py ${OUT_DIR}_weaksup_post_only_img_unp_4terms ${SUP_LEV} --dropout ${DROPOUT} --weaksup post-only-img-4terms --load_dir ${OUT_DIR}_pretrain --alpha 1 --beta 2 --num_iter 3 --cuda --context_condition far; exec bash";
-done
+# for SUP_LEV in 0.0005 0.001 0.002 0.005 0.01 0.02
+# do
+# 		screen -S train_chairs_${SUP_LEV}_vae_post_only_img_unp_4terms -dm bash -c "CUDA_VISIBLE_DEVICES=5 python train_chairs_vae.py ${OUT_DIR}_weaksup_post_only_img_unp_4terms ${SUP_LEV} --dropout ${DROPOUT} --weaksup post-only-img-4terms --load_dir ${OUT_DIR}_pretrain --alpha 1 --beta 2 --num_iter 3 --cuda --context_condition far; exec bash";
+# done
 
-for SUP_LEV in 0.05 0.1 0.2 0.5 1.0
-do
-		screen -S train_chairs_${SUP_LEV}_vae_post_only_img_unp_4terms -dm bash -c "CUDA_VISIBLE_DEVICES=6 python train_chairs_vae.py ${OUT_DIR}_weaksup_post_only_img_unp_4terms ${SUP_LEV} --dropout ${DROPOUT} --weaksup post-only-img-4terms --load_dir ${OUT_DIR}_pretrain --alpha 1 --beta 2 --num_iter 3 --cuda --context_condition far; exec bash";
-done
+# for SUP_LEV in 0.05 0.1 0.2 0.5 1.0
+# do
+# 		screen -S train_chairs_${SUP_LEV}_vae_post_only_img_unp_4terms -dm bash -c "CUDA_VISIBLE_DEVICES=6 python train_chairs_vae.py ${OUT_DIR}_weaksup_post_only_img_unp_4terms ${SUP_LEV} --dropout ${DROPOUT} --weaksup post-only-img-4terms --load_dir ${OUT_DIR}_pretrain --alpha 1 --beta 2 --num_iter 3 --cuda --context_condition far; exec bash";
+# done
 
 ##### post - only text - unpaired, 4terms ######
 # for SUP_LEV in 0.0005 0.001 0.002 0.005 0.01 0.02

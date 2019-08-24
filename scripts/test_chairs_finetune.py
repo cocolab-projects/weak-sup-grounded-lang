@@ -5,14 +5,18 @@ import collections
 from tqdm import tqdm
 
 import torch 
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torch.distributions.normal import Normal
+from torchvision import transforms
+from torchvision.utils import save_image
 
 from utils import (AverageMeter, score_txt_logits, _reparameterize,
                     loss_multimodal, _log_mean_exp, gaussian_log_pdf, isotropic_gaussian_log_pdf,
                     bernoulli_log_pdf, get_text, get_image_text_joint_nll)
 from models import (TextEmbedding, TextEncoder, TextDecoder,
-                    ImageEncoder, ImageTextEncoder, ImageDecoder)
+                    ImageEncoder, ImageTextEncoder, ImageDecoder, Finetune_Refgame)
 
 SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
@@ -24,7 +28,6 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('load_dir', type=str, help='where to load checkpoints from')
-    parser.add_argument('tuned_load_dir', type=str, help='where to load checkpoints from')
     parser.add_argument('out_dir', type=str, help='where to store results from')
     parser.add_argument('--dataset', type=str, default='chairs')
     parser.add_argument('--sup_lvl', type=float, default=1.0,
@@ -35,19 +38,21 @@ if __name__ == '__main__':
                         help='lambda argument for text loss')
     parser.add_argument('--beta', type=float, default=1,
                         help='lambda argument for image loss')
+    parser.add_argument('--z_dim', type=int, default=100,
+                        help='number of latent dimension [default = 100]')
     parser.add_argument('--context_condition', type=str, default='far',
                         help='whether the dataset is to include all data')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--cuda', action='store_true', help='Enable cuda')
     args = parser.parse_args()
 
-    print("Called python script: test_chairs_vae.py")
+    print("Called python script: test_chairs_finetune.py")
     print(args)
 
     if args.dataset == 'chairs':
         from chair_dataset import (Chairs_ReferenceGame, Weaksup_Chairs_Reference)
-    if args.dataset == 'critters':
-        from critter_dataset import (Critters_ReferenceGame, Weaksup_Critters_Reference)
+    # if args.dataset == 'critters':
+    #     from critter_dataset import (Critters_ReferenceGame, Weaksup_Critters_Reference)
 
     # set learning device
     args.cuda = args.cuda and torch.cuda.is_available()
@@ -56,71 +61,12 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
+    # Define latent dimension |z_dim|
+    z_dim = args.z_dim
+
     if not os.path.isdir(args.out_dir):
         print("Creating new folder... : {}".format(args.out_dir))
         os.makedirs(args.out_dir)
-
-    def test_loss(split='Test'):
-        assert vocab != None
-        print("Computing final test loss on newly seen dataset...")
-
-        vae_emb.eval()
-        vae_img_enc.eval()
-        vae_txt_enc.eval()
-        vae_mult_enc.eval()
-        vae_img_dec.eval()
-        vae_txt_dec.eval()
-
-        with torch.no_grad():
-            loss_meter = AverageMeter()
-            pbar = tqdm(total=len(test_loader))
-            for batch_idx, (tgt_img, d1_img, d2_img, x_src, x_tgt, x_len) in enumerate(test_loader):
-                batch_size = x_src.size(0) 
-                tgt_img = tgt_img.to(device).float()
-                x_src = x_src.to(device)
-                x_tgt = x_tgt.to(device)
-                x_len = x_len.to(device)
-
-                # Encode to |z|
-                z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
-                z_y_mu, z_y_logvar = vae_img_enc(tgt_img)
-                z_xy_mu, z_xy_logvar = vae_mult_enc(tgt_img, x_src, x_len)
-
-                # sample via reparametrization
-                z_sample_x = _reparameterize(z_x_mu, z_x_logvar)
-                z_sample_y = _reparameterize(z_y_mu, z_y_logvar)
-                z_sample_xy = _reparameterize(z_xy_mu, z_xy_logvar)
-
-                # "predictions"
-                y_mu_z_y = vae_img_dec(z_sample_y)
-                y_mu_z_xy = vae_img_dec(z_sample_xy)
-                x_logit_z_x = vae_txt_dec(z_sample_x, x_src, x_len)
-                x_logit_z_xy = vae_txt_dec(z_sample_xy, x_src, x_len)
-
-                out = {'z_x_mu': z_x_mu, 'z_x_logvar': z_x_logvar,
-                        'z_y_mu': z_y_mu, 'z_y_logvar': z_y_logvar,
-                        'z_xy_mu': z_xy_mu, 'z_xy_logvar': z_xy_logvar,
-                        'y_mu_z_y': y_mu_z_y, 'y_mu_z_xy': y_mu_z_xy, 
-                        'x_logit_z_x': x_logit_z_x, 'x_logit_z_xy': x_logit_z_xy,
-                        'y': tgt_img, 'x': x_tgt, 'x_len': x_len, 'pad_index': pad_index}
-
-                # compute loss
-                loss = loss_multimodal(out, batch_size, alpha=train_args.alpha, beta=train_args.beta)
-                loss_meter.update(loss.item(), batch_size)
-                pbar.set_postfix({'loss': loss_meter.avg})
-                pbar.update()
-            pbar.close()
-
-            print('====> Final Test Loss: {:.4f}'.format(loss_meter.avg))
-        return loss_meter.avg
-
-    def get_conditional_choice(y_1, y_2, y_3, z_mu):
-        pred_img_cond = vae_img_dec(z_mu)
-        diff_tgt = bernoulli_log_pdf(y_1.view(-1).unsqueeze(0), pred_img_cond.view(-1))
-        diff_d1 = bernoulli_log_pdf(y_2.view(-1).unsqueeze(0), pred_img_cond.view(-1))
-        diff_d2 = bernoulli_log_pdf(y_3.view(-1).unsqueeze(0), pred_img_cond.view(-1))
-
-        return pred_img_cond, torch.argmax(torch.Tensor([diff_tgt, diff_d1, diff_d2])).item()
 
     def test_refgame_accuracy(split='Test'):
         """Function: test_refgame_accuracy
@@ -132,63 +78,50 @@ if __name__ == '__main__':
         """
         print("Computing final accuracy for reference game settings...")
 
-        vae_emb.eval()
-        vae_img_enc.eval()
+        sup_finetune.eval()
         vae_txt_enc.eval()
+        vae_img_enc.eval()
+        vae_emb.eval()
         vae_mult_enc.eval()
-        vae_img_dec.eval()
-        vae_txt_dec.eval()
 
         with torch.no_grad():
             loss_meter = AverageMeter()
-
             total_count = 0
-            cond_correct_count = 0
+            correct_count = 0
 
             with tqdm(total=len(test_loader)) as pbar:
-                for batch_idx, (tgt_img, d1_img, d2_img, x_src, x_tgt, x_len) in enumerate(test_loader):
-                    batch_size = x_src.size(0)
+                for batch_idx, (tgt_img, d1_img, d2_img, x_inp, x_tgt, x_len) in enumerate(test_loader):
+                    batch_size = x_inp.size(0)
                     tgt_img = tgt_img.to(device).float()
                     d1_img = d1_img.to(device).float()
                     d2_img = d2_img.to(device).float()
-                    x_src = x_src.to(device)
-                    x_tgt = x_tgt.to(device)
+                    x_inp = x_inp.to(device)
                     x_len = x_len.to(device)
 
-                    # Encode to |z|
-                    z_x_mu, z_x_logvar = vae_txt_enc(x_src, x_len)
-                    z_xy_mu_tgt, z_xy_logvar_tgt = vae_mult_enc(tgt_img, x_src, x_len)
-                    z_xy_mu_d1, z_xy_logvar_d1 = vae_mult_enc(d1_img, x_src, x_len)
-                    z_xy_mu_d2, z_xy_logvar_d2 = vae_mult_enc(d2_img, x_src, x_len)
+                    # obtain embeddings
+                    z_x, _ = vae_txt_enc(x_inp, x_len)
+                    z_y, _ = vae_img_enc(tgt_img)
+                    z_d1, _ = vae_img_enc(d1_img)
+                    z_d2, _ = vae_img_enc(d2_img)
+                    # z_xy, _ = vae_mult_enc(y_img, x_src, x_len)
 
-                    # check accuracy for each datapoint via mean, sampling, conditional
-                    for i in range(batch_size):
-                        verbose = i % 80 == 0
-                        total_count += 1
+                    # obtain predicted compatibility score
+                    tgt_score = sup_finetune(z_x, z_y)
+                    d1_score = sup_finetune(z_x, z_d1)
+                    d2_score = sup_finetune(z_x, z_d2)
 
-                        
-                        pred_rgb_cond, cond_choice = get_conditional_choice(tgt_img[i], d1_img[i], d2_img[i], z_x_mu[i])
-                        
-                        mean_correct, sample_correct, cond_correct = False, False, False
+                    soft = nn.Softmax(dim=1)
+                    loss = soft(torch.cat([tgt_score,d1_score,d2_score], 1))
+                    softList = torch.argmax(loss, dim=1)
 
-                        if cond_choice == 0:
-                            cond_correct_count += 1
-                            cond_correct = True
-                        if verbose:
-                            print()
-                            print("conditional distribution-based choice correct? {}".format('T' if cond_correct else 'F'))
-                    pbar.update()
-                pbar.close()    
+                    correct_count += torch.sum(softList == 0).item()
+                    total_count += softList.size(0)
 
-            # mean_acc = mean_correct_count / float(total_count) * 100
-            # sample_acc = sample_correct_count / float(total_count) * 100
-            cond_acc = cond_correct_count / float(total_count) * 100
-            # print('====> Final Sample-based Accuracy: {}/{} = {}%'.format(sample_correct_count, total_count, sample_acc))
-            # print('====> Final Mean-based Accuracy: {}/{} = {}%'.format(mean_correct_count, total_count, mean_acc))
-            print('====> Final Conditional Accuracy: {}/{} = {}%'.format(cond_correct_count, total_count, cond_acc))
-        return cond_acc
+                accuracy = correct_count / float(total_count) * 100
+                print('====> Final Accuracy: {}/{} = {}%'.format(correct_count, total_count, accuracy))
+        return accuracy
 
-    def load_checkpoint(folder='./', filename='model_best'):
+    def load_finetune_checkpoint(folder='./', filename='model_best'):
         print("\nloading checkpoint file: {}.pth.tar ...\n".format(filename)) 
         checkpoint = torch.load(os.path.join(folder, filename + '.pth.tar'))
         epoch = checkpoint['epoch']
@@ -196,8 +129,7 @@ if __name__ == '__main__':
         vae_img_enc_sd = checkpoint['vae_img_enc']
         vae_txt_enc_sd = checkpoint['vae_txt_enc']
         vae_mult_enc_sd = checkpoint['vae_mult_enc']
-        vae_img_dec_sd = checkpoint['vae_img_dec']
-        vae_txt_dec_sd = checkpoint['vae_txt_dec']
+        sup_finetune_sd = checkpoint['sup_finetune']
         vocab = checkpoint['vocab']
         vocab_size = checkpoint['vocab_size']
         args = checkpoint['cmd_line_args']
@@ -205,23 +137,21 @@ if __name__ == '__main__':
         w2i = vocab['w2i']
         pad_index = w2i[PAD_TOKEN]
 
-        z_dim, channels, img_size = 100, 3, 32
+        channels, img_size = 3, 32
         vae_emb = TextEmbedding(vocab_size)
         vae_img_enc = ImageEncoder(channels, img_size, z_dim)
         vae_txt_enc = TextEncoder(vae_emb, z_dim)
         vae_mult_enc = ImageTextEncoder(channels, img_size, z_dim, vae_emb)
-        vae_img_dec = ImageDecoder(channels, img_size, z_dim)
-        vae_txt_dec = TextDecoder(vae_emb, z_dim, w2i[SOS_TOKEN], w2i[EOS_TOKEN],
-                                    w2i[PAD_TOKEN], w2i[UNK_TOKEN], word_dropout=args.dropout)
 
         vae_emb.load_state_dict(vae_emb_sd)
         vae_img_enc.load_state_dict(vae_img_enc_sd)
         vae_txt_enc.load_state_dict(vae_txt_enc_sd)
         vae_mult_enc.load_state_dict(vae_mult_enc_sd)
-        vae_img_dec.load_state_dict(vae_img_dec_sd)
-        vae_txt_dec.load_state_dict(vae_txt_dec_sd)
 
-        return epoch, args, vae_emb, vae_img_enc, vae_txt_enc, vae_mult_enc, vae_img_dec, vae_txt_dec, vocab, vocab_size, pad_index
+        sup_finetune = Finetune_Refgame(z_dim=args.z_dim)
+        sup_finetune.load_state_dict(sup_finetune_sd)
+
+        return epoch, args, vae_emb, vae_img_enc, vae_txt_enc, vae_mult_enc, sup_finetune, vocab, vocab_size
 
     print("=== begin testing ===")
 
@@ -232,15 +162,14 @@ if __name__ == '__main__':
                                                                         args.alpha,
                                                                         args.beta)
         
-        epoch, train_args, vae_emb, vae_img_enc, vae_txt_enc, vae_mult_enc, vae_img_dec, vae_txt_dec, vocab, vocab_size, pad_index = \
-            load_checkpoint(folder=args.load_dir, filename=filename)
+        epoch, train_args, vae_emb, vae_img_enc, vae_txt_enc, vae_mult_enc, sup_finetune, vocab, vocab_size = \
+                        load_finetune_checkpoint(folder=args.load_dir, filename=filename)
         
         vae_emb.to(device)
         vae_img_enc.to(device)
         vae_txt_enc.to(device)
         vae_mult_enc.to(device)
-        vae_img_dec.to(device)
-        vae_txt_dec.to(device)
+        sup_finetune.to(device)
 
         # sanity check
         print("iteration {} with alpha {} and beta {}\n".format(iter_num, train_args.alpha, train_args.beta))
@@ -248,13 +177,13 @@ if __name__ == '__main__':
 
         if args.dataset == 'chairs':
             test_dataset = Chairs_ReferenceGame(vocab=vocab, split='Test', context_condition=args.context_condition)
-        if args.dataset == 'critters':
-            image_size = 32
-            image_transform = transforms.Compose([
-                                                    transforms.Resize(image_size),
-                                                    transforms.CenterCrop(image_size),
-                                                ])
-            test_dataset = Critters_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition, image_transform=image_transform)
+        # if args.dataset == 'critters':
+        #     image_size = 32
+        #     image_transform = transforms.Compose([
+        #                                             transforms.Resize(image_size),
+        #                                             transforms.CenterCrop(image_size),
+        #                                         ])
+        #     test_dataset = Critters_ReferenceGame(vocab=vocab, split='Validation', context_condition=args.context_condition, image_transform=image_transform)
         test_loader = DataLoader(test_dataset, shuffle=False, batch_size=100, num_workers=8)
         # compute test loss & reference game accuracy
         # losses.append(test_loss())
@@ -279,6 +208,8 @@ if __name__ == '__main__':
 
     print("\n======> Best epochs: {}".format(best_epochs))
     print("======> Average conditional accuracy: {:4f}".format(np.mean(cond_accuracies)))
+
+    print(args)
 
 
 

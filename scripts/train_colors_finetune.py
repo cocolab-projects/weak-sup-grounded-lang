@@ -96,7 +96,7 @@ if __name__ == '__main__':
             z_y, _ = vae_rgb_enc(y_rgb)
             z_d1, _ = vae_rgb_enc(d1_rgb)
             z_d2, _ = vae_rgb_enc(d2_rgb)
-            z_xy, _ = vae_mult_enc(y_rgb, x_src, x_len)
+            # z_xy, _ = vae_mult_enc(y_rgb, x_src, x_len)
 
             # obtain predicted compatibility score
             tgt_score = sup_finetune(z_x, z_y)
@@ -247,12 +247,18 @@ if __name__ == '__main__':
 
         # Define model
         sup_finetune = Finetune_Refgame(z_dim=args.z_dim)
-        vae_emb = TextEmbedding(vocab_size)
-        vae_rgb_enc = ColorEncoder(z_dim)
-        vae_txt_enc = TextEncoder(vae_emb, z_dim)
 
         vae_emb, vae_txt_enc, vae_rgb_enc, vae_mult_enc, pre_vocab = load_vae_checkpoint(iter_num, args, folder=args.load_dir)
         assert pre_vocab == vocab
+
+        for param in vae_emb.parameters():
+            param.requires_grad = False
+        for param in vae_txt_enc.parameters():
+            param.requires_grad = False
+        for param in vae_rgb_enc.parameters():
+            param.requires_grad = False
+        for param in vae_mult_enc.parameters():
+            param.requires_grad = False
 
         # Mount models unto GPU
         sup_finetune = sup_finetune.to(device)

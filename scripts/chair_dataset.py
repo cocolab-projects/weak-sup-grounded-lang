@@ -23,8 +23,8 @@ SOS_TOKEN = '<sos>'
 EOS_TOKEN = '<eos>'
 PAD_TOKEN = '<pad>'
 UNK_TOKEN = '<unk>'
-TRAINING_PERCENTAGE = 64 / 100
-TESTING_PERCENTAGE = 20 / 100
+TRAINING_PERCENTAGE = 80 / 100
+TESTING_PERCENTAGE = 10 / 100
 MIN_USED = 2
 MAX_LEN = 15
 
@@ -47,13 +47,30 @@ class Chairs_ReferenceGame(data.Dataset):
         self.names  = chair_list
 
         npy_path = os.path.join(RAW_DIR, 'cleaned_data_{}.npy'.format(context_condition))
+        # commented out for debugging
         if not os.path.exists(npy_path):
             # print('loading CSV file ...')
             csv_path = os.path.join(RAW_DIR, 'chairs2k_group_data.csv')
             df = pd.read_csv(csv_path)
             df = df[df['correct'] == True]
             df = df[df['communication_role'] == 'speaker']
+            
+            self.random_state = np.random.RandomState(120)
 
+            # split by train / validation / test
+            split_indices = np.arange(len(df))
+            train_len = int(TRAINING_PERCENTAGE * len(split_indices))
+            test_len = int(TESTING_PERCENTAGE * len(split_indices))
+            
+            if self.split == 'Train':
+                split_indices = split_indices[:train_len]
+            if self.split == 'Validation':
+                split_indices = split_indices[train_len:-test_len]
+            if self.split == 'Test':
+                split_indices = split_indices[-test_len:]
+            df = df.reindex(split_indices)
+
+            # split by context condition
             if context_condition != 'all':
                 assert context_condition in ['far', 'close', 'split']
                 df = df[df['context_condition'] == context_condition]
@@ -66,42 +83,7 @@ class Chairs_ReferenceGame(data.Dataset):
             np.save(npy_path, data)
         else:
             print("Load existing cleaned data")
-            data = np.load(npy_path)
-
-        target_names = data[:, 3]
-        target_uniqs = np.unique(target_names)
-        print('\nsplitting data into train and test -- condition "{}"'.format('hard' if self.hard else 'easy'))
-        if not self.hard:
-            # for each unique chair, divide all rows containing it into
-            # training and test sets
-            new_data = []
-            pbar = tqdm(total=len(target_uniqs))
-            for target in target_uniqs:
-                data_i = data[target_names == target]
-                train_len = int(TRAINING_PERCENTAGE * len(data_i))
-                test_len = int(TESTING_PERCENTAGE * len(data_i))
-                if self.split == 'Train':
-                    new_data.append(data_i[:train_len])
-                elif self.split == 'Validation':
-                    new_data.append(data_i[train_len:-test_len])
-                elif self.split == 'Test':
-                    new_data.append(data_i[-test_len:])
-                pbar.update()
-            pbar.close()
-            new_data = np.concatenate(new_data, axis=0)
-            # overwrite data variable
-            data = new_data
-        else:  # if difficulty is "hard", hard == True
-            # for all chairs, divide into train and test sets
-            train_len = int(TRAINING_PERCENTAGE * len(target_uniqs))
-            test_len = int(TESTING_PERCENTAGE * len(target_uniqs))
-            if self.split == 'Train':  
-                splitter = np.in1d(target_names, target_uniqs[:train_len])
-            elif self.split == 'Validation':  
-                splitter = np.in1d(target_names, target_uniqs[train_len:-test_len])
-            elif self.split == 'Test':
-                splitter = np.in1d(target_names, target_uniqs[-test_len:])
-            data = data[splitter]
+            data = np.load(npy_path, allow_pickle=True)
 
         # replace target_chair with a label
         labels = []
@@ -295,6 +277,3 @@ def preprocess_text_chairs(text):
     text = text.lower() 
     tokens = word_tokenize(text)
     return tokens
-
-
-

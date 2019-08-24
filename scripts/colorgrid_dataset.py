@@ -37,10 +37,11 @@ MAX_LEN = 10
 
 class ColorGridDataset(data.Dataset):
     def __init__(self, vocab=None, split='Train', context_condition='far'):
-        with open(os.path.join(RAW_DIR, '1/')) as fp:
-            df = json.load(fp)
-
-        breakpoint()
+        dir_path = os.path.join(RAW_DIR, '1/')
+        for file in os.listdir(dir_path):
+            with open(os.path.join(dir_path, file)) as fp:
+                df = json.load(fp)
+            breakpoint()
         df = df[df['outcome'] == True]
         df = df[df['role'] == 'speaker']
         if context_condition != 'all':
