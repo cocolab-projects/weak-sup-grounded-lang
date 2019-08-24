@@ -96,6 +96,21 @@ class Finetune_Refgame(nn.Module):
         concat = torch.cat((z_x, z_y), 1)
         return self.sequential(concat)
 
+class Finetune_Refgame_debug(nn.Module):
+    def __init__(self, hidden_dim=256, z_dim=100):
+        super(Finetune_Refgame, self).__init__()
+        self.z_dim = z_dim
+        self.hidden_dim = hidden_dim
+        self.sequential = nn.Linear(self.z_dim * 2, 1)
+
+    def forward(self, z_x, z_y):
+        assert z_x.size(1) == z_y.size(1) and z_x.size(1) == 100
+        batch_size = z_x.size(0)
+
+        # concat then forward
+        concat = torch.cat((z_x, z_y), 1)
+        return self.sequential(concat)
+
 def gen_32_conv_output_dim(s):
     s = get_conv_output_dim(s, 2, 0, 2)
     s = get_conv_output_dim(s, 2, 0, 2)
